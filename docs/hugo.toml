@@ -1,0 +1,9 @@
+baseURL = 'https://rays.bfdy.dev/rays-web-security/'
+languageCode = 'en-us'
+title = 'BeamFoundry Rays Web Security'
+theme = 'github.com/alex-shpak/hugo-book'
+
+[params]
+  BookLogo = ''
+  BookSection = 'docs'
+  BookTheme= 'auto'

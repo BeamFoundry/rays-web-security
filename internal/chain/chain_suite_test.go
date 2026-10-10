@@ -1,0 +1,13 @@
+package chain_test
+
+import (
+	"testing"
+
+	. "github.com/onsi/ginkgo/v2"
+	. "github.com/onsi/gomega"
+)
+
+func TestChain(t *testing.T) {
+	RegisterFailHandler(Fail)
+	RunSpecs(t, "Internal/Chain Suite")
+}
