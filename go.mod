@@ -5,7 +5,7 @@ go 1.26.0
 require (
 	github.com/BeamFoundry/rays v0.1.1
 	github.com/go-playground/validator/v10 v10.30.5
-	github.com/onsi/ginkgo/v2 v2.28.3
+	github.com/onsi/ginkgo/v2 v2.33.1
 	github.com/onsi/gomega v1.40.0
 	github.com/timandy/routine v1.1.6
 	golang.org/x/crypto v0.58.0
