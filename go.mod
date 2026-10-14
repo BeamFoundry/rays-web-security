@@ -3,7 +3,7 @@ module github.com/BeamFoundry/rays-web-security
 go 1.26.0
 
 require (
-	github.com/BeamFoundry/rays v0.1.0
+	github.com/BeamFoundry/rays v0.1.1
 	github.com/go-playground/validator/v10 v10.30.5
 	github.com/onsi/ginkgo/v2 v2.28.3
 	github.com/onsi/gomega v1.40.0

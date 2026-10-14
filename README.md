@@ -1,12 +1,14 @@
 # BeamFoundry Rays Web Security 🛡️
 
+**This is an extract of the full documentation available at [rays.bdfy.dev](https://rays.bfdy.dev/rays-web-security/).**
+
 **Rays Web Security** brings the declarative power and robust architecture of Spring Security directly to Go.
 
 Built natively on top of the Rays IoC container, this package provides authentication, authorization, and
 protection against common exploits. It integrates seamlessly with web frameworks (like Rays Fiber) to secure
 your HTTP endpoints using clean, fluent builder chains.
 
-## Introduction & Architecture
+## Introduction and Architecture
 
 Securing enterprise applications often leads to messy, scattered middleware across various routers.
 Rays Web Security centralizes this logic into declarative **Security Filter Chains**.
@@ -23,7 +25,7 @@ Rays Web Security centralizes this logic into declarative **Security Filter Chai
 4. **IoC Native Auto-Configuration:** The framework provides default security implementations out of
   the box, which you can easily override by defining your own Beams.
 
-### 📦 Package Structure & Imports
+### 📦 Package Structure and Imports
 
 To prevent circular dependencies and maintain clean boundaries, Rays Web Security is split into distinct packages:
 
@@ -46,7 +48,7 @@ import (
 )
 ```
 
-## Quickstart & Setup
+## Quickstart and Setup
 
 To secure your application, you need to construct an `HttpSecurity` Beam. This tells the framework which endpoints require authentication and which are public.
 
@@ -116,7 +118,7 @@ func main() {
 }
 ```
 
-## Authentication & Remember Me
+## Authentication and Remember Me
 
 To authenticate users, Rays Web Security needs to know how to look them up and how to verify their passwords.
 
@@ -235,7 +237,7 @@ To keep users logged in across browser sessions without relying solely on long-l
 
 The framework provides a `TokenBasedRememberMeService` in `pkg/rememberme`. For a robust enterprise configuration, you should avoid hardcoding secrets and instead use Rays' `ConfigurationProperties` to load your configuration from YAML.
 
-#### Configuration Options & Defaults
+#### Configuration Options and Defaults
 
 The `TokenBasedRememberMeService` provides several fluent builder methods to customize its behavior:
 
@@ -314,7 +316,7 @@ func (this *RememberMeConfig) RememberMe(
 Once registered, you can inject it directly into your `HttpSecurityBuilder` by calling `.RememberMe(that.rememberme)`.
 
 
-## Security Chains & Authorization
+## Security Chains and Authorization
 
 Now that you have configured how users authenticate, you must define the `HttpSecurity` rules to intercept incoming HTTP requests and determine if they should be allowed to proceed.
 

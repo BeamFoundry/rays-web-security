@@ -3,6 +3,7 @@ package core
 import (
 	"encoding/gob"
 
+	. "github.com/BeamFoundry/rays/pkg/core"
 	. "github.com/BeamFoundry/rays/pkg/lang"
 )
 
@@ -98,12 +99,6 @@ type AuthenticationProvider interface {
 
 	// Supports() should return whether this [AuthenticationProvider] supports this [Authentication]
 	Supports(Authentication) bool
-}
-
-// Manager is a marker interface to differentiate [AuthenticationProvider] and
-// [AuthenticationManager] Authenticate method
-type Manager interface {
-	_Manager()
 }
 
 // AuthenticationManager is an interface that will delegate [Authenticate] to

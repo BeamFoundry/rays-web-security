@@ -1,5 +1,7 @@
 github.com/BeamFoundry/rays v0.1.0 h1:NKzzpjZzv8a3kQgQ4smuFQYZhAMP0wM3nFzhgab7P54=
 github.com/BeamFoundry/rays v0.1.0/go.mod h1:/paaJSxtyBRYBj7u31eTKgKQhW2NrRppAO0DvvdQVA8=
+github.com/BeamFoundry/rays v0.1.1 h1:lfG4cqe+79ii5LPliInorPgIx3Q6uXPs2acHab7Ty5s=
+github.com/BeamFoundry/rays v0.1.1/go.mod h1:J4FuAa1OA68QAcH3SXXdCbY1CmAiJG1Sf4RJvHVJ790=
 github.com/Masterminds/semver/v3 v3.4.0 h1:Zog+i5UMtVoCU8oKka5P7i9q9HgrJeGzI9SA1Xbatp0=
 github.com/Masterminds/semver/v3 v3.4.0/go.mod h1:4V+yj/TJE1HU9XfppCwVMZq3I84lprf4nC11bSS5beM=
 github.com/davecgh/go-spew v1.1.1 h1:vj9j/u1bqnvCEfJOwUhtlOARqs3+rkHYY13jYWTU97c=
