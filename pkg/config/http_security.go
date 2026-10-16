@@ -1,6 +1,8 @@
 package config
 
 import (
+	"slices"
+
 	. "github.com/BeamFoundry/rays/pkg/lang"
 	. "github.com/BeamFoundry/rays/pkg/util"
 
@@ -20,6 +22,8 @@ type HttpSecurity struct {
 	csrf               *CsrfEnabler
 	formLogin          *FormLogin
 	filters            []SecurityFilter
+	customFilterNames  []string
+	securityFilters    map[string]any
 	injectedFilters    map[string]SecurityFilter `@:"Inject"`
 	authorizedRequests []*AuthorizedHttpRequest
 	matchers           []*AntMatcher
@@ -29,11 +33,33 @@ type HttpSecurity struct {
 
 // PostConstruct() implements [BeamPostConstruct]
 func (this *HttpSecurity) PostConstruct() Error {
-	if filter, ok := this.injectedFilters["basicAuthFilter"]; ok {
+	addFilter := func(filter SecurityFilter) {
+		if slices.Contains(this.filters, filter) {
+			return
+		}
 		this.filters = append(this.filters, filter)
 	}
+
+	for _, name := range this.customFilterNames {
+		if filter, ok := this.injectedFilters[name]; ok {
+			addFilter(filter)
+		}
+	}
+	var remaining []string
+	for name := range this.injectedFilters {
+		if name != "basicAuthFilter" && name != "formLoginFilter" && !slices.Contains(this.customFilterNames, name) {
+			remaining = append(remaining, name)
+		}
+	}
+	slices.Sort(remaining)
+	for _, name := range remaining {
+		addFilter(this.injectedFilters[name])
+	}
+	if filter, ok := this.injectedFilters["basicAuthFilter"]; ok {
+		addFilter(filter)
+	}
 	if filter, ok := this.injectedFilters["formLoginFilter"]; ok {
-		this.filters = append(this.filters, filter)
+		addFilter(filter)
 	}
 	return nil
 }
@@ -79,6 +105,11 @@ func (this *HttpSecurity) Matchers() []*AntMatcher {
 // for FormLogin  or BasicAuth which will be included automatically.
 func (this *HttpSecurity) Filters() []SecurityFilter {
 	return this.filters
+}
+
+// SecurityFilters() returns the configured custom security filter configurations.
+func (this *HttpSecurity) SecurityFilters() map[string]any {
+	return this.securityFilters
 }
 
 // RememberMeService() returns an optionally configured [RememberMeService].
@@ -127,8 +158,26 @@ func (this *HttpSecurityBuilder) FormLogin() *FormLoginConfigurer {
 
 // AddCustomFilter() lets you add a custom [SecurityFilter] that will be evaluated by the [SecurityFilterChain].
 // They will be evaluated before global ones like for BasicAuth or FormLogin.
+//
+// Deprecated: Use [HttpSecurityBuilder.AddCustomSecurityFilter] instead.
 func (this *HttpSecurityBuilder) AddCustomFilter(filter SecurityFilter) *HttpSecurityBuilder {
 	this.httpSecurity.filters = append(this.httpSecurity.filters, filter)
+	return this
+}
+
+// AddCustomSecurityFilter() populates a map[string]any in its HttpSecurity of an id and an object struct pointer.
+//
+// This configuration can be retrieved via [HttpSecurity.SecurityFilters] by a prototype [SecurityFilter]
+// implementation and its WithContext() function (implementing [BeamPostConstructWithContext]) to decide if
+// that HttpSecurity requires that filter (if the map contains the key and an object pointer of that type).
+func (this *HttpSecurityBuilder) AddCustomSecurityFilter(name string, obj any) *HttpSecurityBuilder {
+	if this.httpSecurity.securityFilters == nil {
+		this.httpSecurity.securityFilters = make(map[string]any)
+	}
+	if _, ok := this.httpSecurity.securityFilters[name]; !ok {
+		this.httpSecurity.customFilterNames = append(this.httpSecurity.customFilterNames, name)
+	}
+	this.httpSecurity.securityFilters[name] = obj
 	return this
 }
 
@@ -173,6 +222,9 @@ func (this *HttpSecurityBuilder) Build() *HttpSecurity {
 	}
 	if this.httpSecurity.httpPolicy == nil {
 		this.httpSecurity.httpPolicy = HttpPolicy{}.newPolicy(Enum[HttpPolicyEnum]{}.New().PERMIT_ALL, []string{})
+	}
+	if this.httpSecurity.securityFilters == nil {
+		this.httpSecurity.securityFilters = make(map[string]any)
 	}
 
 	return &this.httpSecurity
