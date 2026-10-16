@@ -109,8 +109,7 @@ func (this *FormLoginFilter) RegisterSecurityEndpoint(router SecurityRouter) {
 func (this *FormLoginFilter) BindErrorMessage(obj any, err error) map[string]any {
 	data := map[string]any{"Form": obj, "Error": err.Error()}
 
-	var errs validator.ValidationErrors
-	if errors.As(err, &errs) {
+	if errs, ok := errors.AsType[validator.ValidationErrors](err); ok {
 		data = map[string]any{"Form": obj, "Errors": errs.Error()}
 		if messageSourceValidator, ok := this.messageSourceValidator.Get(); ok {
 			data = map[string]any{"Form": obj, "Errors": messageSourceValidator.TranslateValidationErrors(errs, "fields.login")}

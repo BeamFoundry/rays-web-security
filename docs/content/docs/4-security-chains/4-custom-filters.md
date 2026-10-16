@@ -7,14 +7,46 @@ weight: 4
 
 While Rays Web Security provides robust out-of-the-box mechanisms like Form Login and Basic Authentication, you may occasionally need to implement proprietary authentication flows (e.g., verifying a specific API key header, an internal SSO token, or an OAuth JWT).
 
-You can inject your own security logic directly into the request lifecycle using the `AddCustomFilter()` method on the builder. 
+Custom filters are registered using the `AddCustomSecurityFilter(name string, obj any)` method on `HttpSecurityBuilder`.
 
 > **Important:** Custom filters are always evaluated **before** global filters (like BasicAuth or FormLogin).
 
+## How Custom Filters Work
+
+Rather than requiring you to manually instantiate filter structs directly in your configuration methods, Rays Web Security allows custom filters to be defined as **Prototype Beams** managed by the Rays IoC container. This allows filters to easily inject dependencies (services, encoders, database clients, loggers) via `@:"Inject"` tags.
+
+Filter registration involves two cooperating parts:
+
+1. **Configuring the Security Chain (`AddCustomSecurityFilter`)**: In your `HttpSecurity` configuration, you register a filter identifier (name) and an arbitrary configuration struct pointer using `AddCustomSecurityFilter(name, obj)`. This populates an internal `map[string]any` in `HttpSecurity`, retrievable via `httpSecurity.SecurityFilters()`.
+2. **Contextual Filter Activation (`WithContext`)**: Your custom filter struct implements the Rays `BeamPostConstructWithContext` interface (`WithContext(ctx context.Context) Error`) and is scoped as a `Prototype`. When Rays prepares to inject candidate filters into `HttpSecurity`, it invokes `WithContext()`. The filter retrieves the parent `*HttpSecurity` from the context, checks `httpSecurity.SecurityFilters()` for its name and type, and decides whether it is needed for that chain.
+
+If `WithContext()` returns `nil`, Rays injects the filter into the chain. If it returns an `Error`, the filter is excluded from that specific `HttpSecurity`.
+
+### 1. Registration in `HttpSecurityBuilder`
+
 ```go
+package configurations
+
+import (
+    . "github.com/BeamFoundry/rays-web-security/pkg/config"
+    . "github.com/BeamFoundry/rays/pkg/core"
+)
+
+type MyApiKeyFilterConfig struct {
+    HeaderName string
+    ValidKey   string
+}
+
+type SecurityConfig struct {
+    Configuration
+}
+
 func (this *SecurityConfig) HttpSecurity() *HttpSecurity {
     return (&HttpSecurityBuilder{}).
-        AddCustomFilter(&MyApiKeyFilter{}). // Will run before standard authentication
+        AddCustomSecurityFilter("myApiKeyFilter", &MyApiKeyFilterConfig{
+            HeaderName: "X-API-KEY",
+            ValidKey:   "secret-token",
+        }).
         AuthorizedHTTPRequests().
             AnyRequest().Authenticated().
         And().
@@ -22,6 +54,89 @@ func (this *SecurityConfig) HttpSecurity() *HttpSecurity {
         Build()
 }
 ```
+
+### 2. Implementing the Custom Filter Beam
+
+To implement a custom filter that integrates with this injection mechanism:
+1. Embed `Component` and `Prototype` to mark it as a prototype Beam.
+2. Implement `SecurityFilter` (`Authenticate` and `AuthenticationRequired`).
+3. Implement `BeamPostConstructWithContext` (`WithContext(ctx context.Context) Error`).
+
+```go
+package filters
+
+import (
+    "context"
+
+    . "github.com/BeamFoundry/rays-web-security/pkg/config"
+    . "github.com/BeamFoundry/rays-web-security/pkg/core"
+    . "github.com/BeamFoundry/rays/pkg/core"
+    . "github.com/BeamFoundry/rays/pkg/lang"
+)
+
+type MyApiKeyFilter struct {
+    Component
+    Prototype
+
+    logger Logging               `@:"Inject"`
+    config *MyApiKeyFilterConfig
+}
+
+var _, _ = any(&MyApiKeyFilter{}).(Stereotype)
+var _ SecurityFilter = &MyApiKeyFilter{}
+var _ BeamPostConstructWithContext = &MyApiKeyFilter{}
+
+func (this *MyApiKeyFilter) WithContext(ctx context.Context) Error {
+    if ct := ctx.Value(PrototypeContextParentInstance); ct != nil {
+        httpSecurity, ok := ct.(*HttpSecurity)
+        if !ok {
+            return NewError("IllegalArgumentException", "Only HttpSecurity may inject this filter")
+        }
+
+        // Check if this HttpSecurity configured this filter
+        raw, ok := httpSecurity.SecurityFilters()["myApiKeyFilter"]
+        if !ok {
+            return NewError("IllegalArgumentException", "HttpSecurity does not configure myApiKeyFilter")
+        }
+
+        // Validate configuration struct pointer type
+        cfg, ok := raw.(*MyApiKeyFilterConfig)
+        if !ok {
+            return NewError("IllegalArgumentException", "Invalid configuration type for myApiKeyFilter")
+        }
+
+        this.config = cfg
+    }
+    return nil
+}
+
+func (this *MyApiKeyFilter) Authenticate(handler SecurityHandler) SecurityFilterChainException {
+    apiKey := handler.Header(this.config.HeaderName)
+
+    if apiKey == "" {
+        // Continue down the chain, allowing other filters (e.g. BasicAuth) to evaluate
+        return DefaultSecurityFilterChainException{}.Next()
+    }
+
+    if apiKey != this.config.ValidKey {
+        return DefaultSecurityFilterChainException{}.ReportError(
+            NewError("InvalidApiKey", "The provided API key is invalid"), 401,
+        )
+    }
+
+    // ... establish authentication in SecurityContext ...
+
+    return DefaultSecurityFilterChainException{}.Next()
+}
+
+func (this *MyApiKeyFilter) AuthenticationRequired(handler SecurityHandler) SecurityFilterChainException {
+    return DefaultSecurityFilterChainException{}.ReportError(
+        NewError("HttpException", "Authentication Required"), 401,
+    )
+}
+```
+
+> **Note on `AddCustomFilter()`:** The earlier `AddCustomFilter(filter SecurityFilter)` method on `HttpSecurityBuilder` is now **deprecated**. It required manually instantiating filter structs within configuration methods, preventing them from taking advantage of Rays dependency injection. `AddCustomSecurityFilter` solves this by decoupling configuration parameters from filter instantiation.
 
 ## The Interfaces
 
@@ -84,32 +199,6 @@ Implementing this interface manually would be tedious. Rays Web Security provide
 *   **`RedirectTo(url string)`**: Aborts the chain and redirects the user (defaults to HTTP 302).
 *   **`RedirectToWithCode(url string, code int)`**: Aborts the chain and redirects using a specific HTTP code.
 *   **`RenderView(view string, data map[string]any)`**: Aborts the chain and renders a specific template view.
-
-#### Example Filter Response
-
-Here is what returning a default pipeline action looks like inside your `Authenticate` function:
-
-```go
-func (f *MyApiKeyFilter) Authenticate(handler SecurityHandler) SecurityFilterChainException {
-    apiKey := handler.Header("X-API-KEY")
-    
-    if apiKey == "" {
-        // Continue down the chain, perhaps BasicAuth can authenticate them
-        return DefaultSecurityFilterChainException{}.Next()
-    }
-    
-    if apiKey != "valid-key" {
-        // Immediately reject the request with a 401
-        return DefaultSecurityFilterChainException{}.ReportError(
-            NewError("InvalidApiKey", "The provided key is invalid"), 401,
-        )
-    }
-    
-    // ... establish authentication in the context ...
-    
-    return DefaultSecurityFilterChainException{}.Next()
-}
-```
 
 ### 4. Registering Endpoints (`SecurityEndpointRegistration`)
 
