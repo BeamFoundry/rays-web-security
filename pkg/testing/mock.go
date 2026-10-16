@@ -102,6 +102,8 @@ func (m *MockSecurityAppHandler) EnableCsrf(skip func(handler SecurityHandler) b
 }
 
 // EnableSession implements [core.SecurityAppHandler].
+//
+//nolint:gosec // testing only
 func (m *MockSecurityAppHandler) EnableSession(skip func(handler SecurityHandler) bool) {
 	m.Use(func(handler SecurityHandler) error {
 		if !skip(handler) {

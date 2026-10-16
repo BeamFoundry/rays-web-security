@@ -29,7 +29,7 @@ var _ SecurityFilter = &BasicAuthFilter{}
 
 func (this *BasicAuthFilter) WithContext(ctx context.Context) Error {
 	if ct := ctx.Value(PrototypeContextParentInstance); ct != nil {
-		httpSecurity, ok := (ct).(*HttpSecurity)
+		httpSecurity, ok := ct.(*HttpSecurity)
 		if !ok {
 			return NewError("IllegalArgumentException", "Only HttpSecurity may inject this type")
 		}

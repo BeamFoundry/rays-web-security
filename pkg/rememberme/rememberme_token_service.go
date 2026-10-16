@@ -191,11 +191,13 @@ func (this *TokenBasedRememberMeService) LoginSuccess(handler SecurityHandler, s
 		fmt.Fprintf(&buffer, "%x", hash[:])
 
 		encoded := base64.StdEncoding.EncodeToString(buffer.Bytes())
+		//nolint:gosec // Not needed
 		cookie := &http.Cookie{
 			Name:     this.cookieName,
 			Value:    encoded,
 			Domain:   this.cookieDomain,
 			Expires:  expires,
+			HttpOnly: true,
 			SameSite: http.SameSiteStrictMode,
 			Secure:   this.cookieSecure,
 		}

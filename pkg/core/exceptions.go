@@ -65,7 +65,6 @@ func (this *DefaultSecurityFilterChainException) Action() string {
 
 // Handle() implements [SecurityFilterChainException.Handle].
 func (this *DefaultSecurityFilterChainException) Handle(handler SecurityHandler) error {
-	//nolint:wrapcheck // To be reviewed
 	switch this.action {
 	case DefaultSecurityFilterAction{}.New().ERROR:
 		return handler.Error(this.status, this.err.Message())

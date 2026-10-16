@@ -38,7 +38,7 @@ var _ SecurityEndpointRegistration = &FormLoginFilter{}
 
 func (this *FormLoginFilter) WithContext(ctx context.Context) Error {
 	if ct := ctx.Value(PrototypeContextParentInstance); ct != nil {
-		httpSecurity, ok := (ct).(*HttpSecurity)
+		httpSecurity, ok := ct.(*HttpSecurity)
 		if !ok {
 			return NewError("IllegalArgumentException", "Only HttpSecurity may inject this type")
 		}
@@ -107,13 +107,16 @@ func (this *FormLoginFilter) RegisterSecurityEndpoint(router SecurityRouter) {
 }
 
 func (this *FormLoginFilter) BindErrorMessage(obj any, err error) map[string]any {
-	data := map[string]any{"Form": obj, "Error": err.Error()}
+	data := map[string]any{"Form": obj}
 
 	if errs, ok := errors.AsType[validator.ValidationErrors](err); ok {
-		data = map[string]any{"Form": obj, "Errors": errs.Error()}
 		if messageSourceValidator, ok := this.messageSourceValidator.Get(); ok {
-			data = map[string]any{"Form": obj, "Errors": messageSourceValidator.TranslateValidationErrors(errs, "fields.login")}
+			data["Errors"] = messageSourceValidator.TranslateValidationErrors(errs, "fields.login")
+		} else {
+			data["Errors"] = errs.Error()
 		}
+	} else {
+		data["Error"] = err.Error()
 	}
 	return data
 }
@@ -187,6 +190,5 @@ func (this *FormLoginFilter) renderLogin(handler SecurityHandler, m map[string]a
 	}
 	m["loginForm"] = loginForm
 
-	//nolint:wrapcheck // Not needed
 	return handler.RenderView(this.httpSecurity.FormLogin().ViewName(), m)
 }

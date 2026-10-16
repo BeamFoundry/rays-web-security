@@ -46,7 +46,7 @@ func (this *DefaultSecurityFilterChain) Initialize(serverName string, app Securi
 				return false
 			}
 			for _, filter := range httpSecurity.Filters() {
-				if _, ok := (filter).(SessionAwareFilter); ok {
+				if _, ok := filter.(SessionAwareFilter); ok {
 					return false
 				}
 			}

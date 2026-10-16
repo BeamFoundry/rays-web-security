@@ -179,9 +179,13 @@ linters:
           disabled: true
         - name: max-public-structs
           disabled: true
+        - name: marshal-receiver
+          disabled: true
         - name: modifies-parameter
           disabled: true
         - name: modifies-value-receiver
+          disabled: true
+        - name: multiline-if-init
           disabled: true
         - name: nested-structs
           disabled: true
@@ -242,6 +246,7 @@ linters:
       constant-kind: true
     wrapcheck:
       ignore-package-globs:
+        - github.com/BeamFoundry/*
         - github.com/gofiber/fiber/*
         - github.com/valyala/fasthttp
   exclusions:
