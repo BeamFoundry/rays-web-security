@@ -188,6 +188,26 @@ var _ = Describe("FormLogin", func() {
 	})
 })
 
+type Optioner struct {
+	httpSecurityBuilder *HttpSecurityBuilder
+}
+
+func (this *Optioner) And() *HttpSecurityBuilder {
+	return this.httpSecurityBuilder
+}
+
+func (this *Optioner) Activate() *Optioner {
+	return this
+}
+
+func Option(h *HttpSecurityBuilder) *Optioner {
+	return &Optioner{httpSecurityBuilder: h}
+}
+
+var _ = Describe("With", func() {
+	Expect((&HttpSecurityBuilder{}).With(Option).Activate().And()).NotTo(BeNil())
+})
+
 type NilSecurityFilter struct{}
 
 var _ SecurityFilter = &NilSecurityFilter{}

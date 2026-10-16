@@ -7,7 +7,7 @@ weight: 4
 
 While Rays Web Security provides robust out-of-the-box mechanisms like Form Login and Basic Authentication, you may occasionally need to implement proprietary authentication flows (e.g., verifying a specific API key header, an internal SSO token, or an OAuth JWT).
 
-Custom filters are registered using the `AddCustomSecurityFilter(name string, obj any)` method on `HttpSecurityBuilder`.
+Custom filters are registered using the `AddCustomSecurityFilter(name string, obj any)` method on `HttpSecurityBuilder`, or fluently using `With()`.
 
 > **Important:** Custom filters are always evaluated **before** global filters (like BasicAuth or FormLogin).
 
@@ -17,12 +17,16 @@ Rather than requiring you to manually instantiate filter structs directly in you
 
 Filter registration involves two cooperating parts:
 
-1. **Configuring the Security Chain (`AddCustomSecurityFilter`)**: In your `HttpSecurity` configuration, you register a filter identifier (name) and an arbitrary configuration struct pointer using `AddCustomSecurityFilter(name, obj)`. This populates an internal `map[string]any` in `HttpSecurity`, retrievable via `httpSecurity.SecurityFilters()`.
+1. **Configuring the Security Chain (`With` and `AddCustomSecurityFilter`)**: In your `HttpSecurity` configuration, you register a filter identifier (name) and an arbitrary configuration struct pointer using `AddCustomSecurityFilter(name, obj)`—either directly or fluently via the `With()` method on `HttpSecurityBuilder`. This populates an internal `map[string]any` in `HttpSecurity`, retrievable via `httpSecurity.SecurityFilters()`.
 2. **Contextual Filter Activation (`WithContext`)**: Your custom filter struct implements the Rays `BeamPostConstructWithContext` interface (`WithContext(ctx context.Context) Error`) and is scoped as a `Prototype`. When Rays prepares to inject candidate filters into `HttpSecurity`, it invokes `WithContext()`. The filter retrieves the parent `*HttpSecurity` from the context, checks `httpSecurity.SecurityFilters()` for its name and type, and decides whether it is needed for that chain.
 
 If `WithContext()` returns `nil`, Rays injects the filter into the chain. If it returns an `Error`, the filter is excluded from that specific `HttpSecurity`.
 
 ### 1. Registration in `HttpSecurityBuilder`
+
+Using Go 1.27 generic method support, `HttpSecurityBuilder.With()` accepts a function taking `*HttpSecurityBuilder` and returning an object implementing `HttpSecurityBuilderOption` (requiring an `And() *HttpSecurityBuilder` method).
+
+The configuration struct (e.g., `MyApiKeyFilterConfig`) maintains a private reference to `*HttpSecurityBuilder`, exposes chainable methods to configure itself, and implements `And() *HttpSecurityBuilder`. A constructor function such as `MyApiKey(*HttpSecurityBuilder) *MyApiKeyFilterConfig` registers the configuration struct via `AddCustomSecurityFilter` and returns it for chaining:
 
 ```go
 package configurations
@@ -33,8 +37,31 @@ import (
 )
 
 type MyApiKeyFilterConfig struct {
-    HeaderName string
-    ValidKey   string
+    httpSecurityBuilder *HttpSecurityBuilder
+    headerName          string
+    validKey            string
+}
+
+func (this *MyApiKeyFilterConfig) HeaderName(headerName string) *MyApiKeyFilterConfig {
+    this.headerName = headerName
+    return this
+}
+
+func (this *MyApiKeyFilterConfig) ValidKey(validKey string) *MyApiKeyFilterConfig {
+    this.validKey = validKey
+    return this
+}
+
+func (this *MyApiKeyFilterConfig) And() *HttpSecurityBuilder {
+    this.httpSecurityBuilder.AddCustomSecurityFilter("myApiKeyFilter", config)
+    return this.httpSecurityBuilder
+}
+
+func MyApiKey(builder *HttpSecurityBuilder) *MyApiKeyFilterConfig {
+    config := &MyApiKeyFilterConfig{
+        httpSecurityBuilder: builder,
+    }
+    return config
 }
 
 type SecurityConfig struct {
@@ -43,10 +70,10 @@ type SecurityConfig struct {
 
 func (this *SecurityConfig) HttpSecurity() *HttpSecurity {
     return (&HttpSecurityBuilder{}).
-        AddCustomSecurityFilter("myApiKeyFilter", &MyApiKeyFilterConfig{
-            HeaderName: "X-API-KEY",
-            ValidKey:   "secret-token",
-        }).
+        With(MyApiKey).
+            HeaderName("X-API-KEY").
+            ValidKey("secret-token").
+        And().
         AuthorizedHTTPRequests().
             AnyRequest().Authenticated().
         And().
@@ -111,14 +138,14 @@ func (this *MyApiKeyFilter) WithContext(ctx context.Context) Error {
 }
 
 func (this *MyApiKeyFilter) Authenticate(handler SecurityHandler) SecurityFilterChainException {
-    apiKey := handler.Header(this.config.HeaderName)
+    apiKey := handler.Header(this.config.headerName)
 
     if apiKey == "" {
         // Continue down the chain, allowing other filters (e.g. BasicAuth) to evaluate
         return DefaultSecurityFilterChainException{}.Next()
     }
 
-    if apiKey != this.config.ValidKey {
+    if apiKey != this.config.validKey {
         return DefaultSecurityFilterChainException{}.ReportError(
             NewError("InvalidApiKey", "The provided API key is invalid"), 401,
         )
@@ -169,26 +196,26 @@ type SecurityHandler interface {
     SetHeader(name, value string)
     Method() string
     Path() string
-    
+
     SessionReset()
     SessionRefresh()
     SessionValue(key string) any
     SetSessionValue(key string, obj any)
-    
+
     URL() *url.URL
     BindBody(obj any) error
     Redirect(to string, code int) error
     RenderView(view string, data map[string]any) error
     Error(code int, message string) error
     Write(p []byte) (n int, err error)
-    
+
     Next() error // Enable the next handler
 }
 ```
 
 ### 3. Pipeline Control (`SecurityFilterChainException`)
 
-Instead of passing Go `error` types directly, filters dictate the flow of the security chain by returning a `SecurityFilterChainException`. 
+Instead of passing Go `error` types directly, filters dictate the flow of the security chain by returning a `SecurityFilterChainException`.
 
 #### Default Action Factory
 
@@ -230,9 +257,9 @@ func (f *MyApiKeyFilter) RegisterSecurityEndpoint(router SecurityRouter) {
 
 ### 5. Session Awareness (`SessionAwareFilter`)
 
-By default, if your `SessionCreationPolicy` is set to `.IfRequired()`, the framework dynamically assesses whether to provision HTTP sessions. 
+By default, if your `SessionCreationPolicy` is set to `.IfRequired()`, the framework dynamically assesses whether to provision HTTP sessions.
 
-If your custom filter relies on session storage to function properly, you **must** implement the `SessionAwareFilter` marker interface. This explicitly signals to the framework that session management should be enabled for this chain. 
+If your custom filter relies on session storage to function properly, you **must** implement the `SessionAwareFilter` marker interface. This explicitly signals to the framework that session management should be enabled for this chain.
 
 In Go, the cleanest way to implement a marker interface is to embed it anonymously in your struct:
 
@@ -240,7 +267,7 @@ In Go, the cleanest way to implement a marker interface is to embed it anonymous
 type MyApiKeyFilter struct {
     Component // Rays framework component marker
     SessionAwareFilter // Anonymous embedding satisfies the marker interface
-    
+
     // ... other fields ...
 }
 ```

@@ -215,6 +215,16 @@ func (this *HttpSecurityBuilder) Match(path string, paths ...string) *HttpSecuri
 	return this
 }
 
+// HttpSecurityBuilderOption expose an interface having a return And() function to an *HttpSecurityBuilder
+type HttpSecurityBuilderOption interface {
+	And() *HttpSecurityBuilder
+}
+
+// With() will accept a function accepting a [HttpSecurityBuilder] and returning an object implementing [HttpSecurityBuilderOption].
+func (this *HttpSecurityBuilder) With[T HttpSecurityBuilderOption](fn func(*HttpSecurityBuilder) T) T {
+	return fn(this)
+}
+
 // Build() builds and return a new httpSecurity.
 func (this *HttpSecurityBuilder) Build() *HttpSecurity {
 	if this.httpSecurity.csrf == nil {
