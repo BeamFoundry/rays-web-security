@@ -8,6 +8,7 @@ import (
 
 	. "github.com/BeamFoundry/rays-web-security/internal/manager"
 
+	. "github.com/BeamFoundry/rays-web-security/pkg/auth"
 	. "github.com/BeamFoundry/rays-web-security/pkg/core"
 	. "github.com/BeamFoundry/rays-web-security/pkg/password"
 )
@@ -42,4 +43,29 @@ func (this *DefaultConfiguration) UserDetailsAuthenticationProvider(
 	provider := UserDetailsAuthenticationProvider{}.New(service)
 	provider.SetEncoder(that.encoder)
 	return provider
+}
+
+func (this *DefaultConfiguration) AuthenticationUserDetailsService(
+	that struct {
+		ConditionalOnMissingBeam
+		userDetailsService Optional[UserDetailsService] `@:"Inject"`
+	},
+) AuthenticationUserDetailsService {
+	if uds, ok := that.userDetailsService.Get(); ok {
+		return UserDetailsByNameServiceWrapper{}.New(uds)
+	}
+	return PreAuthenticatedGrantedAuthoritiesUserDetailsService{}.New()
+}
+
+func (this *DefaultConfiguration) PreAuthenticatedAuthenticationProvider(
+	that struct {
+		ConditionalOnMissingBeam
+		service Optional[AuthenticationUserDetailsService] `@:"Inject"`
+	},
+) *PreAuthenticatedAuthenticationProvider {
+	service, ok := that.service.Get()
+	if !ok {
+		return nil
+	}
+	return PreAuthenticatedAuthenticationProvider{}.New(service)
 }

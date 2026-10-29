@@ -21,6 +21,7 @@ type HttpSecurity struct {
 	httpPolicy         *HttpPolicy
 	csrf               *CsrfEnabler
 	formLogin          *FormLogin
+	preAuth            *PreAuth
 	filters            []SecurityFilter
 	customFilterNames  []string
 	securityFilters    map[string]any
@@ -40,6 +41,9 @@ func (this *HttpSecurity) PostConstruct() Error {
 		this.filters = append(this.filters, filter)
 	}
 
+	if filter, ok := this.injectedFilters["preAuthFilter"]; ok {
+		addFilter(filter)
+	}
 	for _, name := range this.customFilterNames {
 		if filter, ok := this.injectedFilters[name]; ok {
 			addFilter(filter)
@@ -47,7 +51,7 @@ func (this *HttpSecurity) PostConstruct() Error {
 	}
 	var remaining []string
 	for name := range this.injectedFilters {
-		if name != "basicAuthFilter" && name != "formLoginFilter" && !slices.Contains(this.customFilterNames, name) {
+		if name != "basicAuthFilter" && name != "formLoginFilter" && name != "preAuthFilter" && !slices.Contains(this.customFilterNames, name) {
 			remaining = append(remaining, name)
 		}
 	}
@@ -87,6 +91,11 @@ func (this *HttpSecurity) Basic() bool {
 // FormLogin() return the [FormLogin] object, if configured.
 func (this *HttpSecurity) FormLogin() *FormLogin {
 	return this.formLogin
+}
+
+// PreAuth() returns the [PreAuth] object, if configured.
+func (this *HttpSecurity) PreAuth() *PreAuth {
+	return this.preAuth
 }
 
 // SessionCreationPolicy() returns the SessionCreationPolicy configured.
@@ -154,6 +163,11 @@ func (this *HttpSecurityBuilder) Basic() *HttpSecurityBuilder {
 // WARNING: This needs a [UserDetailsService] to be defined.
 func (this *HttpSecurityBuilder) FormLogin() *FormLoginConfigurer {
 	return FormLoginConfigurer{}.newConfigurer(this)
+}
+
+// PreAuth() enables and lets you configure the Pre-Authentication process.
+func (this *HttpSecurityBuilder) PreAuth() *PreAuthConfigurer {
+	return PreAuthConfigurer{}.newConfigurer(this)
 }
 
 // AddCustomFilter() lets you add a custom [SecurityFilter] that will be evaluated by the [SecurityFilterChain].

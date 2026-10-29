@@ -92,6 +92,15 @@ type UserDetailsService interface {
 	LoadUserByUsername(username string) UserDetails
 }
 
+// AuthenticationUserDetailsService is an interface used to retrieve UserDetails using an [Authentication] token.
+//
+// This is typically used in pre-authentication scenarios where extra attributes or authorities
+// are present in the token rather than only a username.
+type AuthenticationUserDetailsService interface {
+	// LoadUserDetails() should return a [UserDetails] given an [Authentication] token or an error.
+	LoadUserDetails(token Authentication) (UserDetails, AuthenticationException)
+}
+
 // AuthenticationProvider will handle authentication for a specific [Authentication].
 type AuthenticationProvider interface {
 	// Authenticate() will return an authenticated [Authenication] or an AuthenticationException

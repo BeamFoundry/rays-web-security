@@ -412,5 +412,18 @@ var _ = Describe("Mock Security Filter ", func() {
 				Expect(ex).To(HaveOccurred())
 			})
 		})
+
+		Context("MockSecurityAppHandler and Handler capabilities", func() {
+			It("supports PostAuthorizationFilter and TLSConnectionState", func() {
+				app := NewMockSecurityAppHandler()
+				handler := NewMockSecurityHandler(HttpMethods.GET, ValErr(url.Parse("https://www.example.com/test")))
+
+				// Test PostAuthorizationFilter
+				app.PostAuthorizationFilter(handler)
+
+				// Test TLSConnectionState
+				Expect(handler.TLSConnectionState()).NotTo(BeNil())
+			})
+		})
 	})
 })

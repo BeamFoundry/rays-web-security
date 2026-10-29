@@ -125,8 +125,45 @@ func (this *RememberMeAuthenticationToken) GetCredentials() any {
 	return ""
 }
 
+// PreAuthenticatedAuthenticationToken is an implementation of [Authentication] representing
+// a pre-authenticated principal (e.g. from upstream reverse proxy headers or TLS client certificates).
+type PreAuthenticatedAuthenticationToken struct {
+	credentials any
+	AbstractAuthenticationToken
+}
+
+var _ Authentication = &PreAuthenticatedAuthenticationToken{}
+
+// New() is the constructor for an unauthenticated [PreAuthenticatedAuthenticationToken].
+func (this PreAuthenticatedAuthenticationToken) New(principal, credentials any) *PreAuthenticatedAuthenticationToken {
+	this.setPrincipal(principal)
+	this.credentials = credentials
+	this.setAuthenticated(false)
+	return &this
+}
+
+// NewAuthenticated() is the constructor for an authenticated [PreAuthenticatedAuthenticationToken].
+func (this PreAuthenticatedAuthenticationToken) NewAuthenticated(principal, credentials any, authorities []GrantedAuthority) *PreAuthenticatedAuthenticationToken {
+	this.setPrincipal(principal)
+	this.credentials = credentials
+	this.Authorities = authorities
+	this.setAuthenticated(true)
+	return &this
+}
+
+// GetCredentials() implements [Authentication.GetCredentials].
+func (this *PreAuthenticatedAuthenticationToken) GetCredentials() any {
+	return this.credentials
+}
+
+// EraseCredentials() implements [CredentialsContainer.EraseCredentials].
+func (this *PreAuthenticatedAuthenticationToken) EraseCredentials() {
+	this.credentials = nil
+}
+
 func init() {
 	gob.Register(&AbstractAuthenticationToken{})
 	gob.Register(&RememberMeAuthenticationToken{})
 	gob.Register(&UsernamePasswordAuthenticationToken{})
+	gob.Register(&PreAuthenticatedAuthenticationToken{})
 }
