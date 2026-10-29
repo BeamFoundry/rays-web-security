@@ -1,5 +1,10 @@
 # BeamFoundry Rays Web Security 🛡️
 
+[![beamfoundry](https://rays.bfdy.dev/rays-web-security/rays-web-security-bfdy.jpeg)](https://rays.bfdy.dev/rays-web-security/)
+
+[![Go Version](https://img.shields.io/badge/Go-1.27+-00ADD8?style=flat&logo=go)](https://golang.org)
+[![codecov](https://codecov.io/gh/BeamFoundry/rays-web-security/graph/badge.svg?token=DJWS93PEI8)](https://codecov.io/gh/BeamFoundry/rays-web-security)
+
 **This is an extract of the full documentation available at [rays.bdfy.dev](https://rays.bfdy.dev/rays-web-security/).**
 
 **Rays Web Security** brings the declarative power and robust architecture of Spring Security directly to Go.

@@ -3,6 +3,7 @@ package testing
 import (
 	"bytes"
 	"context"
+	"crypto/tls"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -143,6 +144,8 @@ type MockSecurityHandler struct {
 
 var _ SecurityHandler = &MockSecurityHandler{}
 
+var _ TLSConnectionHandler = &MockSecurityHandler{}
+
 func NewMockSecurityHandler(method HttpMethod, u *url.URL) *MockSecurityHandler {
 	// httptest requires a string target, so we use u.String()
 	// We also inject a nil body; form values will be handled via req.Form directly in the mock
@@ -256,6 +259,11 @@ func (m *MockSecurityHandler) URL() *url.URL {
 
 func (m *MockSecurityHandler) SetURL(u *url.URL) {
 	m.Req.URL = u
+}
+
+// TLSConnectionState implements [core.TLSConnectionHandler].
+func (m *MockSecurityHandler) TLSConnectionState() *tls.ConnectionState {
+	return m.Req.TLS
 }
 
 func (m *MockSecurityHandler) BindBody(obj any) error {

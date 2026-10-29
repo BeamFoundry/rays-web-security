@@ -195,4 +195,14 @@ var _ = Describe("AddCustomSecurityFilter", func() {
 		}
 		Expect(count).To(Equal(1))
 	})
+
+	It("injects preAuthFilter before other filters in PostConstruct", func() {
+		filter := &AlwaysAcceptSecurityFilter{id: 99}
+		hs := (&HttpSecurityBuilder{}).Build()
+		hs.SetInjectedFiltersForTest(map[string]SecurityFilter{
+			"preAuthFilter": filter,
+		})
+		Expect(hs.PostConstruct()).NotTo(HaveOccurred())
+		Expect(hs.Filters()).To(ContainElement(filter))
+	})
 })

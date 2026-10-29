@@ -1,6 +1,7 @@
 package core
 
 import (
+	"crypto/tls"
 	"net/http"
 	"net/url"
 )
@@ -98,6 +99,13 @@ type SecurityHandler interface {
 
 	// Enable the next handler
 	Next() error
+}
+
+// TLSConnectionHandler is an optional interface a [SecurityHandler] may implement
+// to provide direct access to TLS connection state (e.g. for client certificate inspection).
+type TLSConnectionHandler interface {
+	// TLSConnectionState() returns the TLS connection state or nil if not using TLS.
+	TLSConnectionState() *tls.ConnectionState
 }
 
 // SecurityRouter is a base interface used by [SecurityAppHandler].
