@@ -140,4 +140,39 @@ var _ = Describe("Argon2PasswordEncoder", func() {
 		hugeHash := base64.RawStdEncoding.EncodeToString([]byte(strings.Repeat("A", 1025)))
 		Expect(encoder.Matches([]byte("test"), []byte("$argon2id$v=19$m=4096,t=1,p=1$c2FsdHNhbHRzYWx0MTIzNA$"+hugeHash))).To(BeFalse())
 	})
+
+	It("validates keyLength in Encode and verifies round-trip across accepted keyLengths", func() {
+		// Key length below Argon2MinHashLength (16)
+		encTooShort := Argon2PasswordEncoder{}.New(1, 1024, 1, Argon2MinHashLength-1, 16)
+		_, err := encTooShort.Encode([]byte("password"))
+		Expect(err).To(HaveOccurred())
+		Expect(err.Error()).To(ContainSubstring("outside allowed range"))
+
+		// Key length above Argon2MaxHashLength (1024)
+		encTooLong := Argon2PasswordEncoder{}.New(1, 1024, 1, Argon2MaxHashLength+1, 16)
+		_, err = encTooLong.Encode([]byte("password"))
+		Expect(err).To(HaveOccurred())
+		Expect(err.Error()).To(ContainSubstring("outside allowed range"))
+
+		// Round-trip tests confirming every accepted keyLength produces a hash that Matches accepts
+		acceptedLengths := []uint32{
+			Argon2MinHashLength, // 16
+			24,
+			Argon2DefaultHashLength, // 32
+			48,
+			64,
+			128,
+			256,
+			512,
+			Argon2MaxHashLength, // 1024
+		}
+		for _, keyLen := range acceptedLengths {
+			enc := Argon2PasswordEncoder{}.New(1, 1024, 1, keyLen, 16)
+			pw := []byte(fmt.Sprintf("password-%d", keyLen))
+			encoded, err := enc.Encode(pw)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(enc.Matches(pw, encoded)).To(BeTrue())
+			Expect(enc.Matches([]byte("wrong"), encoded)).To(BeFalse())
+		}
+	})
 })

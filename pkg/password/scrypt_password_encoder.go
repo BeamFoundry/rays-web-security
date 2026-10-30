@@ -84,6 +84,10 @@ func (this *SCryptPasswordEncoder) Encode(password []byte) ([]byte, error) {
 		saltLength = SCryptDefaultSaltLength
 	}
 
+	if cpuCost > SCryptMaxCpuCost || memoryCost > SCryptMaxMemoryCost || parallelism > SCryptMaxParallelism {
+		return []byte(""), fmt.Errorf("scrypt parameters exceed maximum bounds (cpuCost: %d, memoryCost: %d, parallelism: %d)", cpuCost, memoryCost, parallelism)
+	}
+
 	salt := make([]byte, saltLength)
 	if _, err := randReader.Read(salt); err != nil {
 		return []byte(""), err

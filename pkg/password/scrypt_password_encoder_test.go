@@ -57,6 +57,24 @@ var _ = Describe("SCryptPasswordEncoder", func() {
 		invalidCostEncoder := SCryptPasswordEncoder{}.New(3, 8, 1, 32, 16)
 		_, err = invalidCostEncoder.Encode([]byte("test"))
 		Expect(err).To(HaveOccurred())
+
+		// Reject cpuCost above SCryptMaxCpuCost
+		excessiveCpuEncoder := SCryptPasswordEncoder{}.New(1<<21, 8, 1, 32, 16)
+		_, err = excessiveCpuEncoder.Encode([]byte("test"))
+		Expect(err).To(HaveOccurred())
+		Expect(err.Error()).To(ContainSubstring("exceed maximum bounds"))
+
+		// Reject memoryCost above SCryptMaxMemoryCost
+		excessiveMemEncoder := SCryptPasswordEncoder{}.New(1024, 65, 1, 32, 16)
+		_, err = excessiveMemEncoder.Encode([]byte("test"))
+		Expect(err).To(HaveOccurred())
+		Expect(err.Error()).To(ContainSubstring("exceed maximum bounds"))
+
+		// Reject parallelism above SCryptMaxParallelism
+		excessiveParallelEncoder := SCryptPasswordEncoder{}.New(1024, 8, 65, 32, 16)
+		_, err = excessiveParallelEncoder.Encode([]byte("test"))
+		Expect(err).To(HaveOccurred())
+		Expect(err.Error()).To(ContainSubstring("exceed maximum bounds"))
 	})
 
 	It("handles malformed hashes gracefully", func() {

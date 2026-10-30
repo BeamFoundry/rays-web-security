@@ -250,32 +250,38 @@ func (this *Pbkdf2PasswordEncoder) Matches(password, encoded []byte) bool {
 		return false
 	}
 
-	var digested []byte
-	var decodeErr error
+	checkCandidate := func(candidate []byte) bool {
+		if len(candidate) <= saltLength {
+			return false
+		}
+
+		salt := candidate[:saltLength]
+		expectedHash := candidate[saltLength:]
+
+		saltAndSecret := append([]byte(nil), salt...)
+		if len(this.secret) > 0 {
+			saltAndSecret = append(saltAndSecret, this.secret...)
+		}
+
+		computed := pbkdf2.Key(password, saltAndSecret, iterations, len(expectedHash), hashFunc)
+		return subtle.ConstantTimeCompare(expectedHash, computed) == 1
+	}
+
+	var primaryDecoder, secondaryDecoder func(string) ([]byte, error)
 	if this.encodeHashAsBase64 {
-		digested, decodeErr = decodeBase64(encodedStr)
-		if decodeErr != nil {
-			digested, decodeErr = hex.DecodeString(encodedStr)
-		}
+		primaryDecoder = decodeBase64
+		secondaryDecoder = hex.DecodeString
 	} else {
-		digested, decodeErr = hex.DecodeString(encodedStr)
-		if decodeErr != nil {
-			digested, decodeErr = decodeBase64(encodedStr)
-		}
+		primaryDecoder = hex.DecodeString
+		secondaryDecoder = decodeBase64
 	}
 
-	if decodeErr != nil || len(digested) <= saltLength {
-		return false
+	if candidate, err := primaryDecoder(encodedStr); err == nil && checkCandidate(candidate) {
+		return true
+	}
+	if candidate, err := secondaryDecoder(encodedStr); err == nil && checkCandidate(candidate) {
+		return true
 	}
 
-	salt := digested[:saltLength]
-	expectedHash := digested[saltLength:]
-
-	saltAndSecret := append([]byte(nil), salt...)
-	if len(this.secret) > 0 {
-		saltAndSecret = append(saltAndSecret, this.secret...)
-	}
-
-	computed := pbkdf2.Key(password, saltAndSecret, iterations, len(expectedHash), hashFunc)
-	return subtle.ConstantTimeCompare(expectedHash, computed) == 1
+	return false
 }

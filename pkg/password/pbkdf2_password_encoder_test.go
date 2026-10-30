@@ -28,18 +28,36 @@ var _ = Describe("Pbkdf2PasswordEncoder", func() {
 		Expect(encoder.Matches([]byte("wrong"), encoded)).To(BeFalse())
 	})
 
-	It("can encode and match with Base64 encoding", func() {
-		encoder := Pbkdf2PasswordEncoder{}.New("", 16, 1000, 32, "PBKDF2WithHmacSHA256").SetEncodeHashAsBase64(true)
+	It("can encode and match with Base64 encoding and falls back between encodings", func() {
+		b64Encoder := Pbkdf2PasswordEncoder{}.New("", 16, 1000, 32, "PBKDF2WithHmacSHA256").SetEncodeHashAsBase64(true)
+		hexEncoder := Pbkdf2PasswordEncoder{}.New("", 16, 1000, 32, "PBKDF2WithHmacSHA256") // default is Hex
 
 		password := []byte("base64-pbkdf2")
-		encoded, err := encoder.Encode(password)
+		b64Encoded, err := b64Encoder.Encode(password)
 		Expect(err).NotTo(HaveOccurred())
 
-		Expect(encoder.Matches(password, encoded)).To(BeTrue())
-		Expect(encoder.Matches([]byte("wrong"), encoded)).To(BeFalse())
+		hexEncoded, err := hexEncoder.Encode(password)
+		Expect(err).NotTo(HaveOccurred())
+
+		// b64Encoder matches b64Encoded directly (primary decoder)
+		Expect(b64Encoder.Matches(password, b64Encoded)).To(BeTrue())
+		Expect(b64Encoder.Matches([]byte("wrong"), b64Encoded)).To(BeFalse())
+
+		// hexEncoder matches hexEncoded directly (primary decoder)
+		Expect(hexEncoder.Matches(password, hexEncoded)).To(BeTrue())
+		Expect(hexEncoder.Matches([]byte("wrong"), hexEncoded)).To(BeFalse())
+
+		// b64Encoder matches hexEncoded:
+		// decodeBase64 decodes the hex string into candidate bytes, but checkCandidate fails;
+		// it then tries secondaryDecoder (hex), which decodes correctly and matches!
+		Expect(b64Encoder.Matches(password, hexEncoded)).To(BeTrue())
+
+		// hexEncoder matches b64Encoded:
+		// hex.DecodeString fails on non-hex base64 characters, then secondaryDecoder (base64) decodes and matches!
+		Expect(hexEncoder.Matches(password, b64Encoded)).To(BeTrue())
 
 		// Fallback when decodeBase64 errors on invalid base64 input
-		Expect(encoder.Matches([]byte("test"), []byte("invalid-hash!"))).To(BeFalse())
+		Expect(b64Encoder.Matches([]byte("test"), []byte("invalid-hash!"))).To(BeFalse())
 	})
 
 	It("can encode and match with zero-value defaults and handle bounds", func() {

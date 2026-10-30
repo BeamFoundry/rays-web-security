@@ -20,6 +20,7 @@ const (
 	Argon2DefaultIterations  = 2
 	Argon2MaxMemoryKiB       = 1 << 20 // 1048576 KiB (1 GiB)
 	Argon2MinHashLength      = 16
+	Argon2MaxHashLength      = 1024
 )
 
 // Argon2PasswordEncoder implements [core.PasswordEncoder] using the Argon2 hashing algorithm
@@ -83,6 +84,9 @@ func (this *Argon2PasswordEncoder) Encode(password []byte) ([]byte, error) {
 	if keyLength == 0 {
 		keyLength = Argon2DefaultHashLength
 	}
+	if keyLength < Argon2MinHashLength || keyLength > Argon2MaxHashLength {
+		return []byte(""), fmt.Errorf("keyLength %d is outside allowed range [%d, %d]", keyLength, Argon2MinHashLength, Argon2MaxHashLength)
+	}
 
 	hash := argon2.IDKey(password, salt, iterations, memory, parallelism, keyLength)
 
@@ -132,6 +136,7 @@ func (this *Argon2PasswordEncoder) Matches(password, encoded []byte) bool {
 		if err != nil {
 			return false
 		}
+		//nolint:revive //enforce-switch-style
 		switch kv[0] {
 		case "m":
 			if val == 0 || val > Argon2MaxMemoryKiB {
@@ -151,8 +156,6 @@ func (this *Argon2PasswordEncoder) Matches(password, encoded []byte) bool {
 			}
 			parallelism = uint8(val)
 			hasP = true
-		default:
-			// Ignore unrecognized parameters
 		}
 	}
 
@@ -165,7 +168,7 @@ func (this *Argon2PasswordEncoder) Matches(password, encoded []byte) bool {
 		return false
 	}
 	expectedHash, err := decodeBase64(parts[idx+1])
-	if err != nil || len(expectedHash) < Argon2MinHashLength || len(expectedHash) > 1024 {
+	if err != nil || len(expectedHash) < Argon2MinHashLength || len(expectedHash) > Argon2MaxHashLength {
 		return false
 	}
 
