@@ -11,6 +11,7 @@ import (
 	"net/http/httptest"
 	"time"
 
+	. "github.com/BeamFoundry/rays/pkg/lang"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	"golang.org/x/crypto/ocsp"
@@ -79,7 +80,7 @@ var _ = Describe("MutualTLSWithOCSPCustomizer", func() {
 			Certificate: "testdata/pki/intermediate/cacert.pem",
 			OCSPServer:  "https://localhost:8443",
 			TLSProvider: &dummyClientTLSProvider{
-				err: errors.New("tls provider failed"),
+				err: NewError("tls", "tls provider failed"),
 			},
 		}
 		cfg := &tls.Config{MinVersion: tls.VersionTLS12}
@@ -127,8 +128,8 @@ var _ = Describe("MutualTLSWithOCSPCustomizer", func() {
 		}
 		err = customizer.CustomizeServerTLS(serverCfg)
 		Expect(err).NotTo(HaveOccurred())
-		err = serverCfg.VerifyConnection(tls.ConnectionState{})
-		Expect(err).To(MatchError(prevErr))
+		connErr := serverCfg.VerifyConnection(tls.ConnectionState{})
+		Expect(connErr).To(MatchError(prevErr))
 		Expect(called).To(BeTrue())
 	})
 
@@ -140,8 +141,8 @@ var _ = Describe("MutualTLSWithOCSPCustomizer", func() {
 		cfg := &tls.Config{MinVersion: tls.VersionTLS12}
 		err := customizer.CustomizeServerTLS(cfg)
 		Expect(err).NotTo(HaveOccurred())
-		err = cfg.VerifyConnection(tls.ConnectionState{})
-		Expect(err).To(MatchError(ErrMissingPeerCertificate))
+		connErr := cfg.VerifyConnection(tls.ConnectionState{})
+		Expect(connErr).To(MatchError(ErrMissingPeerCertificate))
 	})
 
 	It("fails peer verification when OCSP server returns 500 error", func() {
@@ -223,8 +224,8 @@ var _ = Describe("MutualTLSWithOCSPCustomizer", func() {
 		clientCert, err := parseCertFile("testdata/pki/intermediate/client/cert.pem")
 		Expect(err).NotTo(HaveOccurred())
 
-		err = serverCfg.VerifyConnection(tls.ConnectionState{PeerCertificates: []*x509.Certificate{clientCert}})
-		Expect(err).To(HaveOccurred())
+		connErr := serverCfg.VerifyConnection(tls.ConnectionState{PeerCertificates: []*x509.Certificate{clientCert}})
+		Expect(connErr).To(HaveOccurred())
 	})
 
 	It("handles ocsp.Unknown status for unregistered certificate serial", func() {
@@ -251,8 +252,8 @@ var _ = Describe("MutualTLSWithOCSPCustomizer", func() {
 		Expect(err).NotTo(HaveOccurred())
 		clientCert.SerialNumber = big.NewInt(999999)
 
-		err = serverCfg.VerifyConnection(tls.ConnectionState{PeerCertificates: []*x509.Certificate{clientCert}})
-		Expect(err).To(MatchError(ErrCertificateUnknownOCSP))
+		connErr := serverCfg.VerifyConnection(tls.ConnectionState{PeerCertificates: []*x509.Certificate{clientCert}})
+		Expect(connErr).To(MatchError(ErrCertificateUnknownOCSP))
 	})
 
 	It("handles ocspCreateRequest failure", func() {
@@ -277,8 +278,8 @@ var _ = Describe("MutualTLSWithOCSPCustomizer", func() {
 		clientCert, err := parseCertFile("testdata/pki/intermediate/client/cert.pem")
 		Expect(err).NotTo(HaveOccurred())
 
-		err = serverCfg.VerifyConnection(tls.ConnectionState{PeerCertificates: []*x509.Certificate{clientCert}})
-		Expect(err).To(HaveOccurred())
+		connErr := serverCfg.VerifyConnection(tls.ConnectionState{PeerCertificates: []*x509.Certificate{clientCert}})
+		Expect(connErr).To(HaveOccurred())
 	})
 
 	It("verifies client certificates against OCSP responder over HTTP", func() {
@@ -394,8 +395,8 @@ var _ = Describe("MutualTLSWithOCSPCustomizer", func() {
 		clientCert, err := parseCertFile("testdata/pki/intermediate/client/cert.pem")
 		Expect(err).NotTo(HaveOccurred())
 
-		err = serverCfg.VerifyConnection(tls.ConnectionState{PeerCertificates: []*x509.Certificate{clientCert}})
-		Expect(err).To(MatchError(ErrDelegatedOCSPMissingSigning))
+		connErr := serverCfg.VerifyConnection(tls.ConnectionState{PeerCertificates: []*x509.Certificate{clientCert}})
+		Expect(connErr).To(MatchError(ErrDelegatedOCSPMissingSigning))
 	})
 
 	It("fails when OCSP response ThisUpdate exceeds max age", func() {
@@ -422,8 +423,8 @@ var _ = Describe("MutualTLSWithOCSPCustomizer", func() {
 		clientCert, err := parseCertFile("testdata/pki/intermediate/client/cert.pem")
 		Expect(err).NotTo(HaveOccurred())
 
-		err = serverCfg.VerifyConnection(tls.ConnectionState{PeerCertificates: []*x509.Certificate{clientCert}})
-		Expect(err).To(MatchError(ErrOCSPResponseTooOld))
+		connErr := serverCfg.VerifyConnection(tls.ConnectionState{PeerCertificates: []*x509.Certificate{clientCert}})
+		Expect(connErr).To(MatchError(ErrOCSPResponseTooOld))
 	})
 
 	It("fails when OCSP response has expired past NextUpdate", func() {
@@ -455,8 +456,8 @@ var _ = Describe("MutualTLSWithOCSPCustomizer", func() {
 		clientCert, err := parseCertFile("testdata/pki/intermediate/client/cert.pem")
 		Expect(err).NotTo(HaveOccurred())
 
-		err = serverCfg.VerifyConnection(tls.ConnectionState{PeerCertificates: []*x509.Certificate{clientCert}})
-		Expect(err).To(MatchError(ErrOCSPResponseExpired))
+		connErr := serverCfg.VerifyConnection(tls.ConnectionState{PeerCertificates: []*x509.Certificate{clientCert}})
+		Expect(connErr).To(MatchError(ErrOCSPResponseExpired))
 	})
 
 	It("caches OCSP responses by certificate serial number until NextUpdate expires", func() {
@@ -482,15 +483,15 @@ var _ = Describe("MutualTLSWithOCSPCustomizer", func() {
 		Expect(err).NotTo(HaveOccurred())
 
 		// First call fetches from responder and caches
-		err = serverCfg.VerifyConnection(tls.ConnectionState{PeerCertificates: []*x509.Certificate{clientCert}})
-		Expect(err).NotTo(HaveOccurred())
+		connErr := serverCfg.VerifyConnection(tls.ConnectionState{PeerCertificates: []*x509.Certificate{clientCert}})
+		Expect(connErr).NotTo(HaveOccurred())
 
 		// Close responder so any new network fetch would fail
 		ocspCleanup()
 
 		// Second call succeeds because entry is cached
-		err = serverCfg.VerifyConnection(tls.ConnectionState{PeerCertificates: []*x509.Certificate{clientCert}})
-		Expect(err).NotTo(HaveOccurred())
+		connErr = serverCfg.VerifyConnection(tls.ConnectionState{PeerCertificates: []*x509.Certificate{clientCert}})
+		Expect(connErr).NotTo(HaveOccurred())
 	})
 
 	It("applies explicit policy when NextUpdate is absent and validates response", func() {
@@ -518,8 +519,8 @@ var _ = Describe("MutualTLSWithOCSPCustomizer", func() {
 		clientCert, err := parseCertFile("testdata/pki/intermediate/client/cert.pem")
 		Expect(err).NotTo(HaveOccurred())
 
-		err = serverCfg.VerifyConnection(tls.ConnectionState{PeerCertificates: []*x509.Certificate{clientCert}})
-		Expect(err).NotTo(HaveOccurred())
+		connErr := serverCfg.VerifyConnection(tls.ConnectionState{PeerCertificates: []*x509.Certificate{clientCert}})
+		Expect(connErr).NotTo(HaveOccurred())
 	})
 
 	It("fails when delegated OCSP responder certificate is not yet valid", func() {
@@ -550,8 +551,8 @@ var _ = Describe("MutualTLSWithOCSPCustomizer", func() {
 		clientCert, err := parseCertFile("testdata/pki/intermediate/client/cert.pem")
 		Expect(err).NotTo(HaveOccurred())
 
-		err = serverCfg.VerifyConnection(tls.ConnectionState{PeerCertificates: []*x509.Certificate{clientCert}})
-		Expect(err).To(MatchError(ErrDelegatedOCSPInvalidValidity))
+		connErr := serverCfg.VerifyConnection(tls.ConnectionState{PeerCertificates: []*x509.Certificate{clientCert}})
+		Expect(connErr).To(MatchError(ErrDelegatedOCSPInvalidValidity))
 	})
 
 	It("fails when delegated OCSP responder certificate is expired", func() {
@@ -582,8 +583,8 @@ var _ = Describe("MutualTLSWithOCSPCustomizer", func() {
 		clientCert, err := parseCertFile("testdata/pki/intermediate/client/cert.pem")
 		Expect(err).NotTo(HaveOccurred())
 
-		err = serverCfg.VerifyConnection(tls.ConnectionState{PeerCertificates: []*x509.Certificate{clientCert}})
-		Expect(err).To(MatchError(ErrDelegatedOCSPInvalidValidity))
+		connErr := serverCfg.VerifyConnection(tls.ConnectionState{PeerCertificates: []*x509.Certificate{clientCert}})
+		Expect(connErr).To(MatchError(ErrDelegatedOCSPInvalidValidity))
 	})
 
 	It("fails when OCSP response ThisUpdate is in the future", func() {
@@ -611,8 +612,8 @@ var _ = Describe("MutualTLSWithOCSPCustomizer", func() {
 		clientCert, err := parseCertFile("testdata/pki/intermediate/client/cert.pem")
 		Expect(err).NotTo(HaveOccurred())
 
-		err = serverCfg.VerifyConnection(tls.ConnectionState{PeerCertificates: []*x509.Certificate{clientCert}})
-		Expect(err).To(MatchError(ErrOCSPThisUpdateInFuture))
+		connErr := serverCfg.VerifyConnection(tls.ConnectionState{PeerCertificates: []*x509.Certificate{clientCert}})
+		Expect(connErr).To(MatchError(ErrOCSPThisUpdateInFuture))
 	})
 
 	It("caps OCSP cache lifetime at ThisUpdate plus maxAge when NextUpdate is later", func() {
@@ -641,8 +642,8 @@ var _ = Describe("MutualTLSWithOCSPCustomizer", func() {
 		Expect(err).NotTo(HaveOccurred())
 
 		// First verification succeeds and caches with expiresAt capped at ThisUpdate + 24h
-		err = serverCfg.VerifyConnection(tls.ConnectionState{PeerCertificates: []*x509.Certificate{clientCert}})
-		Expect(err).NotTo(HaveOccurred())
+		connErr := serverCfg.VerifyConnection(tls.ConnectionState{PeerCertificates: []*x509.Certificate{clientCert}})
+		Expect(connErr).NotTo(HaveOccurred())
 
 		// Close responder so any cache miss or expired cache re-fetch fails
 		ocspCleanup()
@@ -655,8 +656,8 @@ var _ = Describe("MutualTLSWithOCSPCustomizer", func() {
 		defer restore()
 
 		// Second verification must bypass the expired cache entry and attempt network fetch, failing because responder is closed
-		err = serverCfg.VerifyConnection(tls.ConnectionState{PeerCertificates: []*x509.Certificate{clientCert}})
-		Expect(err).To(HaveOccurred())
-		Expect(err.Error()).To(ContainSubstring("mtls:"))
+		connErr = serverCfg.VerifyConnection(tls.ConnectionState{PeerCertificates: []*x509.Certificate{clientCert}})
+		Expect(connErr).To(HaveOccurred())
+		Expect(connErr.Error()).To(ContainSubstring("mtls:"))
 	})
 })

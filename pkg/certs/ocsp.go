@@ -11,6 +11,7 @@ import (
 	"sync"
 	"time"
 
+	. "github.com/BeamFoundry/rays/pkg/lang"
 	"github.com/go-resty/resty/v2"
 	"golang.org/x/crypto/ocsp"
 )
@@ -37,14 +38,14 @@ type MutualTLSWithOCSPCustomizer struct {
 var _ ServerTLSCustomizer = &MutualTLSWithOCSPCustomizer{}
 
 // CustomizeServerTLS implements [ServerTLSCustomizer].
-func (m *MutualTLSWithOCSPCustomizer) CustomizeServerTLS(config *tls.Config) error {
+func (m *MutualTLSWithOCSPCustomizer) CustomizeServerTLS(config *tls.Config) Error {
 	mtls := &MutualTLSCustomizer{
 		Certificate: m.Certificate,
 	}
 
-	clientCACert, err := mtls.ClientCertificate()
-	if err != nil {
-		return err
+	clientCACert, certErr := mtls.ClientCertificate()
+	if certErr != nil {
+		return certErr
 	} else if clientCACert == nil {
 		return nil
 	}
@@ -88,9 +89,9 @@ func (m *MutualTLSWithOCSPCustomizer) CustomizeServerTLS(config *tls.Config) err
 			if m.TLSProvider == nil {
 				return ErrTLSProviderRequiredHTTPS
 			}
-			tlsConfig, err := m.TLSProvider.ProvideClientTLS()
-			if err != nil {
-				return err
+			tlsConfig, tlsErr := m.TLSProvider.ProvideClientTLS()
+			if tlsErr != nil {
+				return tlsErr
 			}
 			client.SetTLSClientConfig(tlsConfig)
 		}
@@ -132,7 +133,7 @@ func (m *MutualTLSWithOCSPCustomizer) CustomizeServerTLS(config *tls.Config) err
 				opts := &ocsp.RequestOptions{Hash: crypto.SHA256}
 				buffer, err := ocspCreateRequest(cert, clientCACert, opts)
 				if err != nil {
-					return fmt.Errorf("mtls: %w", err)
+					return NewWrappedError("mtls", err)
 				}
 
 				resp, err := client.R().
@@ -141,16 +142,16 @@ func (m *MutualTLSWithOCSPCustomizer) CustomizeServerTLS(config *tls.Config) err
 					SetBody(buffer).
 					Post(ocspServer)
 				if err != nil {
-					return fmt.Errorf("mtls: %w", err)
+					return NewWrappedError("mtls", err)
 				}
 
 				if resp.StatusCode() < 200 || resp.StatusCode() >= 300 {
-					return fmt.Errorf("mtls: failed to query OCSP server: HTTP status %d", resp.StatusCode())
+					return NewError("mtls", fmt.Sprintf("failed to query OCSP server: HTTP status %d", resp.StatusCode()))
 				}
 
 				parsed, err := ocsp.ParseResponseForCert(resp.Body(), cert, clientCACert)
 				if err != nil {
-					return fmt.Errorf("mtls: %w", err)
+					return NewWrappedError("mtls", err)
 				}
 
 				if parsed.Certificate != nil && !bytes.Equal(parsed.Certificate.Raw, clientCACert.Raw) {
@@ -202,13 +203,13 @@ func (m *MutualTLSWithOCSPCustomizer) CustomizeServerTLS(config *tls.Config) err
 	return nil
 }
 
-func (*MutualTLSWithOCSPCustomizer) validateOCSPServer(ocspServer string) error {
+func (*MutualTLSWithOCSPCustomizer) validateOCSPServer(ocspServer string) Error {
 	ocspURL, err := url.Parse(ocspServer)
 	if err != nil {
-		return fmt.Errorf("mtls: %w", err)
+		return NewWrappedError("mtls", err)
 	}
 	if !slices.Contains([]string{schemeHTTP, schemeHTTPS}, ocspURL.Scheme) {
-		return fmt.Errorf("tls: OCSP Stapling: wrong scheme=%q, only 'http' or 'https' is supported", ocspURL.Scheme)
+		return NewError("tls", fmt.Sprintf("OCSP Stapling: wrong scheme=%q, only 'http' or 'https' is supported", ocspURL.Scheme))
 	}
 	return nil
 }

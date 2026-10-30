@@ -10,6 +10,7 @@ import (
 	"os"
 	"time"
 
+	. "github.com/BeamFoundry/rays/pkg/lang"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
@@ -138,7 +139,7 @@ var _ = Describe("MutualTLSWithCRLCustomizer", func() {
 			Certificate:    "testdata/pki/intermediate/cacert.pem",
 			RevocationList: "https://localhost:8443/crl.pem",
 			TLSProvider: &dummyClientTLSProvider{
-				err: errors.New("provider failed"),
+				err: NewError("tls", "provider failed"),
 			},
 		}
 		cfg := &tls.Config{MinVersion: tls.VersionTLS12}
@@ -256,8 +257,8 @@ var _ = Describe("MutualTLSWithCRLCustomizer", func() {
 		}
 		err := customizer.CustomizeServerTLS(cfg)
 		Expect(err).NotTo(HaveOccurred())
-		err = cfg.VerifyConnection(tls.ConnectionState{})
-		Expect(err).To(MatchError(prevErr))
+		connErr := cfg.VerifyConnection(tls.ConnectionState{})
+		Expect(connErr).To(MatchError(prevErr))
 		Expect(called).To(BeTrue())
 	})
 
@@ -269,8 +270,8 @@ var _ = Describe("MutualTLSWithCRLCustomizer", func() {
 		cfg := &tls.Config{MinVersion: tls.VersionTLS12}
 		err := customizer.CustomizeServerTLS(cfg)
 		Expect(err).NotTo(HaveOccurred())
-		err = cfg.VerifyConnection(tls.ConnectionState{})
-		Expect(err).To(MatchError(ErrMissingPeerCertificate))
+		connErr := cfg.VerifyConnection(tls.ConnectionState{})
+		Expect(connErr).To(MatchError(ErrMissingPeerCertificate))
 	})
 
 	It("verifies client certificates against CRL loaded from file", func() {

@@ -24,21 +24,25 @@ The package separates configuration into **Providers** (which create a base `*tl
 ```go
 package certs
 
-import "crypto/tls"
+import (
+    "crypto/tls"
+
+    . "github.com/BeamFoundry/rays/pkg/lang"
+)
 
 // ServerTLSProvider produces a server-side *tls.Config.
 type ServerTLSProvider interface {
-    ProvideServerTLS() (*tls.Config, error)
+    ProvideServerTLS() (*tls.Config, Error)
 }
 
 // ServerTLSCustomizer mutates an existing server *tls.Config.
 type ServerTLSCustomizer interface {
-    CustomizeServerTLS(config *tls.Config) error
+    CustomizeServerTLS(config *tls.Config) Error
 }
 
 // ClientTLSProvider produces a client-side *tls.Config.
 type ClientTLSProvider interface {
-    ProvideClientTLS() (*tls.Config, error)
+    ProvideClientTLS() (*tls.Config, Error)
 }
 ```
 

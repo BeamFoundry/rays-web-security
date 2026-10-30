@@ -11,6 +11,7 @@ import (
 	"slices"
 	"time"
 
+	. "github.com/BeamFoundry/rays/pkg/lang"
 	"github.com/go-resty/resty/v2"
 )
 
@@ -53,14 +54,14 @@ type MutualTLSWithCRLCustomizer struct {
 var _ ServerTLSCustomizer = &MutualTLSWithCRLCustomizer{}
 
 // CustomizeServerTLS implements [ServerTLSCustomizer].
-func (m *MutualTLSWithCRLCustomizer) CustomizeServerTLS(config *tls.Config) error {
+func (m *MutualTLSWithCRLCustomizer) CustomizeServerTLS(config *tls.Config) Error {
 	mtls := &MutualTLSCustomizer{
 		Certificate: m.Certificate,
 	}
 
-	clientCACert, err := mtls.ClientCertificate()
-	if err != nil {
-		return err
+	clientCACert, certErr := mtls.ClientCertificate()
+	if certErr != nil {
+		return certErr
 	} else if clientCACert == nil {
 		return nil
 	}
@@ -87,11 +88,11 @@ func (m *MutualTLSWithCRLCustomizer) CustomizeServerTLS(config *tls.Config) erro
 		} else {
 			file, readErr := os.ReadFile(filepath.Clean(m.RevocationList))
 			if readErr != nil {
-				return fmt.Errorf("tls: failed to read CRL file from path=%q: %w", m.RevocationList, readErr)
+				return NewWrappedError("tls", fmt.Errorf("failed to read CRL file from path=%q: %w", m.RevocationList, readErr))
 			}
 			bytes, ok := m.decodePemCrl(file)
 			if !ok {
-				return fmt.Errorf("tls: failed to parse CRL from path=%q", m.RevocationList)
+				return NewError("tls", fmt.Sprintf("failed to parse CRL from path=%q", m.RevocationList))
 			}
 			crlBytes = bytes
 		}
@@ -112,12 +113,12 @@ func (m *MutualTLSWithCRLCustomizer) CustomizeServerTLS(config *tls.Config) erro
 		}
 	}
 
-	crl, err := x509.ParseRevocationList(crlBytes)
-	if err != nil {
-		return fmt.Errorf("tls: unable to load CRL: %w", err)
+	crl, parseErr := x509.ParseRevocationList(crlBytes)
+	if parseErr != nil {
+		return NewWrappedError("tls", fmt.Errorf("unable to load CRL: %w", parseErr))
 	}
-	if err := crl.CheckSignatureFrom(clientCACert); err != nil {
-		return fmt.Errorf("tls: invalid CRL signature: %w", err)
+	if sigErr := crl.CheckSignatureFrom(clientCACert); sigErr != nil {
+		return NewWrappedError("tls", fmt.Errorf("invalid CRL signature: %w", sigErr))
 	}
 	if !crl.NextUpdate.IsZero() && timeNow().After(crl.NextUpdate) {
 		return ErrCRLExpired
@@ -152,18 +153,18 @@ func (*MutualTLSWithCRLCustomizer) decodePemCrl(crl []byte) ([]byte, bool) {
 	return nil, false
 }
 
-func (*MutualTLSWithCRLCustomizer) validateFetchURL(dist string) (*url.URL, error) {
+func (*MutualTLSWithCRLCustomizer) validateFetchURL(dist string) (*url.URL, Error) {
 	distURL, err := url.Parse(dist)
 	if err != nil {
-		return nil, fmt.Errorf("tls: %w", err)
+		return nil, NewWrappedError("tls", err)
 	}
 	if !slices.Contains([]string{schemeHTTP, schemeHTTPS}, distURL.Scheme) {
-		return nil, fmt.Errorf("tls: CRL fetching client: wrong scheme=%q, only 'http' or 'https' is supported", distURL.Scheme)
+		return nil, NewError("tls", fmt.Sprintf("CRL fetching client: wrong scheme=%q, only 'http' or 'https' is supported", distURL.Scheme))
 	}
 	return distURL, nil
 }
 
-func (m *MutualTLSWithCRLCustomizer) fetchCRL(distURL *url.URL) ([]byte, error) {
+func (m *MutualTLSWithCRLCustomizer) fetchCRL(distURL *url.URL) ([]byte, Error) {
 	client := m.Client
 	if client == nil {
 		client = resty.New()
@@ -182,14 +183,14 @@ func (m *MutualTLSWithCRLCustomizer) fetchCRL(distURL *url.URL) ([]byte, error) 
 
 	resp, err := client.R().Get(distURL.String())
 	if err != nil {
-		return nil, fmt.Errorf("tls: unable to fetch certificate revocation list from url=%q: %w", distURL.String(), err)
+		return nil, NewWrappedError("tls", fmt.Errorf("unable to fetch certificate revocation list from url=%q: %w", distURL.String(), err))
 	}
 	if resp.StatusCode() < 200 || resp.StatusCode() >= 300 {
-		return nil, fmt.Errorf("tls: failed to fetch CRL from url=%q: HTTP status %d", distURL.String(), resp.StatusCode())
+		return nil, NewError("tls", fmt.Sprintf("failed to fetch CRL from url=%q: HTTP status %d", distURL.String(), resp.StatusCode()))
 	}
 
 	if bytes, ok := m.decodePemCrl(resp.Body()); ok {
 		return bytes, nil
 	}
-	return nil, fmt.Errorf("tls: unable to parse PEM CRL from url=%q", distURL.String())
+	return nil, NewError("tls", fmt.Sprintf("unable to parse PEM CRL from url=%q", distURL.String()))
 }

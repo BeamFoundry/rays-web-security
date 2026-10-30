@@ -7,6 +7,8 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+
+	. "github.com/BeamFoundry/rays/pkg/lang"
 )
 
 var systemCertPool = x509.SystemCertPool
@@ -43,7 +45,7 @@ type ClientCertificateProvider struct {
 var _ ClientTLSProvider = &ClientCertificateProvider{}
 
 // ProvideClientTLS implements [ClientTLSProvider].
-func (p *ClientCertificateProvider) ProvideClientTLS() (*tls.Config, error) {
+func (p *ClientCertificateProvider) ProvideClientTLS() (*tls.Config, Error) {
 	if p.Certificate == "" && p.RootCertificates == "" && !p.IncludeSystemCertificates {
 		return nil, nil //nolint:nilnil // Returning nil config without error when provider is unconfigured is intentional
 	}
@@ -60,7 +62,7 @@ func (p *ClientCertificateProvider) ProvideClientTLS() (*tls.Config, error) {
 	if p.IncludeSystemCertificates {
 		root, err := systemCertPool()
 		if err != nil {
-			return nil, fmt.Errorf("clienttls: cannot load system root certificates: %w", err)
+			return nil, NewWrappedError("clienttls", fmt.Errorf("cannot load system root certificates: %w", err))
 		}
 		tlsConfig.RootCAs = root
 	} else {
@@ -71,19 +73,19 @@ func (p *ClientCertificateProvider) ProvideClientTLS() (*tls.Config, error) {
 		if block, _ := pem.Decode([]byte(p.Certificate)); block != nil {
 			cert, err := tls.X509KeyPair([]byte(p.Certificate), []byte(p.Certificate))
 			if err != nil {
-				return nil, fmt.Errorf("clienttls: cannot load TLS key pair from Certificate: %w", err)
+				return nil, NewWrappedError("clienttls", fmt.Errorf("cannot load TLS key pair from Certificate: %w", err))
 			}
 			tlsConfig.Certificates = []tls.Certificate{cert}
 		} else {
 			cert, err := tls.LoadX509KeyPair(p.Certificate, p.Certificate)
 			if err != nil {
-				return nil, fmt.Errorf("clienttls: cannot load TLS key pair from Certificate: %w", err)
+				return nil, NewWrappedError("clienttls", fmt.Errorf("cannot load TLS key pair from Certificate: %w", err))
 			}
 			tlsConfig.Certificates = []tls.Certificate{cert}
 		}
 	}
 
-	appendRootAndReturn := func(cas []byte) (*tls.Config, error) {
+	appendRootAndReturn := func(cas []byte) (*tls.Config, Error) {
 		if !tlsConfig.RootCAs.AppendCertsFromPEM(cas) {
 			return nil, ErrAppendRootCertificates
 		}
@@ -96,7 +98,7 @@ func (p *ClientCertificateProvider) ProvideClientTLS() (*tls.Config, error) {
 		}
 		file, err := os.ReadFile(filepath.Clean(p.RootCertificates))
 		if err != nil {
-			return nil, fmt.Errorf("clienttls: cannot load file for root certificates: %w", err)
+			return nil, NewWrappedError("clienttls", fmt.Errorf("cannot load file for root certificates: %w", err))
 		}
 		if block, _ := pem.Decode(file); block != nil {
 			return appendRootAndReturn(file)

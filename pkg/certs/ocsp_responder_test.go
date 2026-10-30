@@ -23,6 +23,7 @@ import (
 	"strings"
 	"time"
 
+	. "github.com/BeamFoundry/rays/pkg/lang"
 	. "github.com/onsi/gomega"
 	"golang.org/x/crypto/ocsp"
 )
@@ -262,18 +263,18 @@ func (o *OCSPResponder) getIndexEntry(s *big.Int) (*IndexEntry, error) {
 	return nil, fmt.Errorf("tls: Serial 0x%x not found", s)
 }
 
-func parseCertFile(filename string) (*x509.Certificate, error) {
+func parseCertFile(filename string) (*x509.Certificate, Error) {
 	ct, err := os.ReadFile(filepath.Clean(filename))
 	if err != nil {
-		return nil, fmt.Errorf("%w", err)
+		return nil, NewWrappedError("tls", err)
 	}
 	block, _ := pem.Decode(ct)
 	if block == nil {
-		return nil, errors.New("tls: invalid PEM certificate")
+		return nil, NewError("tls", "invalid PEM certificate")
 	}
 	cert, err := x509.ParseCertificate(block.Bytes)
 	if err != nil {
-		return nil, fmt.Errorf("%w", err)
+		return nil, NewWrappedError("tls", err)
 	}
 	return cert, nil
 }

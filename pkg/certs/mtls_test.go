@@ -2,11 +2,11 @@ package certs_test
 
 import (
 	"crypto/tls"
-	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os"
 
+	. "github.com/BeamFoundry/rays/pkg/lang"
 	"github.com/go-resty/resty/v2"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -29,7 +29,7 @@ func startTLSServer(cfg *tls.Config) (addr string, cleanup func()) {
 	return ts.Listener.Addr().String(), ts.Close
 }
 
-func sendRequest(provider ClientTLSProvider, targetURL string) (*resty.Response, error) {
+func sendRequest(provider ClientTLSProvider, targetURL string) (*resty.Response, Error) {
 	client := resty.New()
 	if provider != nil {
 		tlsConfig, err := provider.ProvideClientTLS()
@@ -40,7 +40,7 @@ func sendRequest(provider ClientTLSProvider, targetURL string) (*resty.Response,
 	}
 	resp, err := client.R().Get(targetURL)
 	if err != nil {
-		return nil, fmt.Errorf("request failed: %w", err)
+		return nil, NewWrappedError("http", err)
 	}
 	return resp, nil
 }

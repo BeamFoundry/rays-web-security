@@ -7,6 +7,8 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+
+	. "github.com/BeamFoundry/rays/pkg/lang"
 )
 
 // MutualTLSCustomizer is a struct implementing [ServerTLSCustomizer].
@@ -24,7 +26,7 @@ var _ ServerTLSCustomizer = &MutualTLSCustomizer{}
 //
 // It parses the Certificate, either a file path or its content, a PEM encoded CA certificate.
 // It will add the certificate to config.ClientCAs and set config.ClientAuth to tls.RequireAndVerifyClientCert.
-func (c *MutualTLSCustomizer) CustomizeServerTLS(cfg *tls.Config) error {
+func (c *MutualTLSCustomizer) CustomizeServerTLS(cfg *tls.Config) Error {
 	certificate, err := c.ClientCertificate()
 	if err != nil {
 		return err
@@ -40,7 +42,7 @@ func (c *MutualTLSCustomizer) CustomizeServerTLS(cfg *tls.Config) error {
 }
 
 // ClientCertificate provides a way to retrieve the configured Client CA certificate.
-func (c *MutualTLSCustomizer) ClientCertificate() (*x509.Certificate, error) {
+func (c *MutualTLSCustomizer) ClientCertificate() (*x509.Certificate, Error) {
 	if c.Certificate == "" {
 		return nil, nil //nolint:nilnil // Returning nil cert without error when certificate is empty is intentional
 	}
@@ -52,7 +54,7 @@ func (c *MutualTLSCustomizer) ClientCertificate() (*x509.Certificate, error) {
 	} else {
 		file, err := os.ReadFile(filepath.Clean(c.Certificate))
 		if err != nil {
-			return nil, fmt.Errorf("tls: failed to read file from path: %w", err)
+			return nil, NewWrappedError("tls", fmt.Errorf("failed to read file from path: %w", err))
 		}
 		if b, _ := pem.Decode(file); b != nil {
 			block = b
@@ -65,7 +67,7 @@ func (c *MutualTLSCustomizer) ClientCertificate() (*x509.Certificate, error) {
 
 	cert, err := x509.ParseCertificate(block.Bytes)
 	if err != nil {
-		return nil, fmt.Errorf("tls: cannot load client CA certificate: %w", err)
+		return nil, NewWrappedError("tls", fmt.Errorf("cannot load client CA certificate: %w", err))
 	}
 
 	return cert, nil

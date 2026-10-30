@@ -2,8 +2,8 @@ package certs_test
 
 import (
 	"crypto/tls"
-	"errors"
 
+	. "github.com/BeamFoundry/rays/pkg/lang"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
@@ -11,28 +11,28 @@ import (
 )
 
 type dummyCustomizer struct {
-	err error
+	err Error
 }
 
-func (d *dummyCustomizer) CustomizeServerTLS(_ *tls.Config) error {
+func (d *dummyCustomizer) CustomizeServerTLS(_ *tls.Config) Error {
 	return d.err
 }
 
 type dummyServerProvider struct {
 	cfg *tls.Config
-	err error
+	err Error
 }
 
-func (d *dummyServerProvider) ProvideServerTLS() (*tls.Config, error) {
+func (d *dummyServerProvider) ProvideServerTLS() (*tls.Config, Error) {
 	return d.cfg, d.err
 }
 
 type dummyClientTLSProvider struct {
 	cfg *tls.Config
-	err error
+	err Error
 }
 
-func (d *dummyClientTLSProvider) ProvideClientTLS() (*tls.Config, error) {
+func (d *dummyClientTLSProvider) ProvideClientTLS() (*tls.Config, Error) {
 	return d.cfg, d.err
 }
 
@@ -45,7 +45,7 @@ var _ = Describe("Configure Helpers", func() {
 		})
 
 		It("returns error when provider returns error", func() {
-			expectedErr := errors.New("provider error")
+			expectedErr := NewError("tls", "provider error")
 			cfg, err := ConfigureServerTLS(&dummyServerProvider{err: expectedErr})
 			Expect(err).To(MatchError(expectedErr))
 			Expect(cfg).To(BeNil())
@@ -71,7 +71,7 @@ var _ = Describe("Configure Helpers", func() {
 		})
 
 		It("returns error when customizer fails", func() {
-			customizerErr := errors.New("customizer failed")
+			customizerErr := NewError("tls", "customizer failed")
 			serverProv := &ServerCertificateProvider{
 				Certificate: "testdata/pki/intermediate/server/fullchain.pem",
 			}

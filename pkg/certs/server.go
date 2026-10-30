@@ -5,6 +5,7 @@ import (
 	"encoding/pem"
 	"fmt"
 
+	. "github.com/BeamFoundry/rays/pkg/lang"
 	"golang.org/x/crypto/acme/autocert"
 )
 
@@ -26,7 +27,7 @@ type ACMECertificateProvider struct {
 var _ ServerTLSProvider = &ACMECertificateProvider{}
 
 // ProvideServerTLS implements [ServerTLSProvider].
-func (p *ACMECertificateProvider) ProvideServerTLS() (*tls.Config, error) {
+func (p *ACMECertificateProvider) ProvideServerTLS() (*tls.Config, Error) {
 	var tlsConfig *tls.Config
 
 	minVersion := p.TLSMinVersion
@@ -84,7 +85,7 @@ type ServerCertificateProvider struct {
 var _ ServerTLSProvider = &ServerCertificateProvider{}
 
 // ProvideServerTLS implements [ServerTLSProvider].
-func (p *ServerCertificateProvider) ProvideServerTLS() (*tls.Config, error) {
+func (p *ServerCertificateProvider) ProvideServerTLS() (*tls.Config, Error) {
 	var tlsConfig *tls.Config
 
 	minVersion := p.TLSMinVersion
@@ -108,24 +109,24 @@ func (p *ServerCertificateProvider) ProvideServerTLS() (*tls.Config, error) {
 		if block, _ := pem.Decode([]byte(p.Certificate)); block != nil {
 			cert, err := tls.X509KeyPair([]byte(p.Certificate), []byte(p.Certificate))
 			if err != nil {
-				return nil, fmt.Errorf("tls: cannot load TLS key pair from CertificateChain: %w", err)
+				return nil, NewWrappedError("tls", fmt.Errorf("cannot load TLS key pair from CertificateChain: %w", err))
 			}
 			setCert(cert)
 		} else {
 			cert, err := tls.LoadX509KeyPair(p.Certificate, p.Certificate)
 			if err != nil {
-				return nil, fmt.Errorf("tls: cannot load TLS key pair from CertificateChain: %w", err)
+				return nil, NewWrappedError("tls", fmt.Errorf("cannot load TLS key pair from CertificateChain: %w", err))
 			}
 			setCert(cert)
 		}
 	case p.CertFile != "" && p.CertKeyFile != "":
 		cert, err := tls.LoadX509KeyPair(p.CertFile, p.CertKeyFile)
 		if err != nil {
-			return nil, fmt.Errorf("tls: cannot load TLS key pair from certFile=%q and keyFile=%q: %w", p.CertFile, p.CertKeyFile, err)
+			return nil, NewWrappedError("tls", fmt.Errorf("cannot load TLS key pair from certFile=%q and keyFile=%q: %w", p.CertFile, p.CertKeyFile, err))
 		}
 		setCert(cert)
 	case p.CertFile != "" || p.CertKeyFile != "":
-		return nil, fmt.Errorf("tls: both CertFile and CertKeyFile must be set, got certFile=%q, certKeyFile=%q: %w", p.CertFile, p.CertKeyFile, ErrIncompleteCertKeyFile)
+		return nil, NewWrappedError("tls", fmt.Errorf("both CertFile and CertKeyFile must be set, got certFile=%q, certKeyFile=%q: %w", p.CertFile, p.CertKeyFile, ErrIncompleteCertKeyFile))
 	default:
 	}
 
