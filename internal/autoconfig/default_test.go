@@ -25,6 +25,27 @@ var _ = Describe("DefaultConfiguration", func() {
 		cfg := &DefaultConfiguration{}
 		encoder := cfg.PasswordEncoder(struct{ ConditionalOnMissingBeam }{})
 		Expect(encoder).NotTo(BeNil())
+
+		password := []byte("default-cfg-test")
+		encoded, err := encoder.Encode(password)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(string(encoded)).To(HavePrefix("{bcrypt}"))
+		Expect(encoder.Matches(password, encoded)).To(BeTrue())
+
+		// Verify support for all configured algorithms
+		Expect(encoder.Matches([]byte("test"), []byte("{noop}test"))).To(BeTrue())
+
+		argon2Hash, err := Argon2PasswordEncoder{}.New(1, 4096, 1, 32, 16).Encode(password)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(encoder.Matches(password, append([]byte("{argon2}"), argon2Hash...))).To(BeTrue())
+
+		scryptHash, err := SCryptPasswordEncoder{}.New(1024, 8, 1, 32, 16).Encode(password)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(encoder.Matches(password, append([]byte("{scrypt}"), scryptHash...))).To(BeTrue())
+
+		pbkdf2Hash, err := Pbkdf2PasswordEncoder{}.NewDefault().Encode(password)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(encoder.Matches(password, append([]byte("{pbkdf2}"), pbkdf2Hash...))).To(BeTrue())
 	})
 
 	It("provides UserDetailsAuthenticationProvider when service is present or nil when absent", func() {
