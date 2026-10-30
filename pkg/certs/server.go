@@ -103,7 +103,8 @@ func (p *ServerCertificateProvider) ProvideServerTLS() (*tls.Config, error) {
 		}
 	}
 
-	if p.Certificate != "" {
+	switch {
+	case p.Certificate != "":
 		if block, _ := pem.Decode([]byte(p.Certificate)); block != nil {
 			cert, err := tls.X509KeyPair([]byte(p.Certificate), []byte(p.Certificate))
 			if err != nil {
@@ -117,12 +118,15 @@ func (p *ServerCertificateProvider) ProvideServerTLS() (*tls.Config, error) {
 			}
 			setCert(cert)
 		}
-	} else if p.CertFile != "" && p.CertKeyFile != "" {
+	case p.CertFile != "" && p.CertKeyFile != "":
 		cert, err := tls.LoadX509KeyPair(p.CertFile, p.CertKeyFile)
 		if err != nil {
 			return nil, fmt.Errorf("tls: cannot load TLS key pair from certFile=%q and keyFile=%q: %w", p.CertFile, p.CertKeyFile, err)
 		}
 		setCert(cert)
+	case p.CertFile != "" || p.CertKeyFile != "":
+		return nil, fmt.Errorf("tls: both CertFile and CertKeyFile must be set, got certFile=%q, certKeyFile=%q: %w", p.CertFile, p.CertKeyFile, ErrIncompleteCertKeyFile)
+	default:
 	}
 
 	return tlsConfig, nil

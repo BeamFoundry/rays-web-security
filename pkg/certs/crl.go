@@ -78,16 +78,16 @@ func (m *MutualTLSWithCRLCustomizer) CustomizeServerTLS(config *tls.Config) erro
 	if m.RevocationList != "" {
 		if bytes, ok := m.decodePemCrl([]byte(m.RevocationList)); ok {
 			crlBytes = bytes
-		} else if distURL, err := m.validateFetchURL(m.RevocationList); err == nil {
-			file, err := m.fetchCRL(distURL)
-			if err != nil {
-				return err
+		} else if distURL, urlErr := m.validateFetchURL(m.RevocationList); urlErr == nil {
+			file, fetchErr := m.fetchCRL(distURL)
+			if fetchErr != nil {
+				return fetchErr
 			}
 			crlBytes = file
 		} else {
-			file, err := os.ReadFile(filepath.Clean(m.RevocationList))
-			if err != nil {
-				return fmt.Errorf("tls: failed to read CRL file from path=%q: %w", m.RevocationList, err)
+			file, readErr := os.ReadFile(filepath.Clean(m.RevocationList))
+			if readErr != nil {
+				return fmt.Errorf("tls: failed to read CRL file from path=%q: %w", m.RevocationList, readErr)
 			}
 			bytes, ok := m.decodePemCrl(file)
 			if !ok {
@@ -96,45 +96,50 @@ func (m *MutualTLSWithCRLCustomizer) CustomizeServerTLS(config *tls.Config) erro
 			crlBytes = bytes
 		}
 	} else {
+		if len(clientCACert.CRLDistributionPoints) == 0 {
+			return ErrNoUsableCRL
+		}
 		for _, dist := range clientCACert.CRLDistributionPoints {
-			if distURL, err := m.validateFetchURL(dist); err == nil {
-				if crl, err := m.fetchCRL(distURL); err == nil {
+			if distURL, urlErr := m.validateFetchURL(dist); urlErr == nil {
+				if crl, fetchErr := m.fetchCRL(distURL); fetchErr == nil {
 					crlBytes = crl
 					break
 				}
 			}
 		}
+		if len(crlBytes) == 0 {
+			return ErrNoUsableCRL
+		}
 	}
 
-	var clientCRL *x509.RevocationList
-
-	if len(crlBytes) > 0 {
-		crl, err := x509.ParseRevocationList(crlBytes)
-		if err != nil {
-			return fmt.Errorf("tls: unable to load CRL: %w", err)
-		}
-		if err := crl.CheckSignatureFrom(clientCACert); err != nil {
-			return fmt.Errorf("tls: invalid CRL signature: %w", err)
-		}
-		clientCRL = crl
+	crl, err := x509.ParseRevocationList(crlBytes)
+	if err != nil {
+		return fmt.Errorf("tls: unable to load CRL: %w", err)
+	}
+	if err := crl.CheckSignatureFrom(clientCACert); err != nil {
+		return fmt.Errorf("tls: invalid CRL signature: %w", err)
+	}
+	if !crl.NextUpdate.IsZero() && timeNow().After(crl.NextUpdate) {
+		return ErrCRLExpired
 	}
 
-	if clientCRL != nil {
-		prevVerify := config.VerifyPeerCertificate
-		config.VerifyPeerCertificate = func(rawCerts [][]byte, verifiedChains [][]*x509.Certificate) error { //nolint:gosec // G123: Peer certificate verification for CRL check
-			if prevVerify != nil {
-				if err := prevVerify(rawCerts, verifiedChains); err != nil {
-					return err
-				}
+	prevVerify := config.VerifyConnection
+	config.VerifyConnection = func(cs tls.ConnectionState) error {
+		if prevVerify != nil {
+			if err := prevVerify(cs); err != nil {
+				return err
 			}
-			cert := verifiedChains[0][0]
-			for _, revokedCertificate := range clientCRL.RevokedCertificateEntries {
-				if revokedCertificate.SerialNumber.Cmp(cert.SerialNumber) == 0 {
-					return ErrCertificateRevoked
-				}
-			}
-			return nil
 		}
+		if len(cs.PeerCertificates) == 0 {
+			return ErrMissingPeerCertificate
+		}
+		cert := cs.PeerCertificates[0]
+		for _, revokedCertificate := range crl.RevokedCertificateEntries {
+			if revokedCertificate.SerialNumber.Cmp(cert.SerialNumber) == 0 {
+				return ErrCertificateRevoked
+			}
+		}
+		return nil
 	}
 
 	return nil

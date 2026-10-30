@@ -42,11 +42,12 @@ type OCSPConfig struct {
 }
 
 type OCSPResponder struct {
-	config       *OCSPConfig
-	caCert       *x509.Certificate
-	respCert     *x509.Certificate
-	indexModTime time.Time
-	indexEntries []IndexEntry
+	config             *OCSPConfig
+	caCert             *x509.Certificate
+	respCert           *x509.Certificate
+	NextUpdateOverride *time.Time
+	indexModTime       time.Time
+	indexEntries       []IndexEntry
 }
 
 type IndexEntry struct {
@@ -60,8 +61,8 @@ type IndexEntry struct {
 func NewOCSPResponder() (*OCSPResponder, error) {
 	config := &OCSPConfig{
 		IndexFile:    "testdata/pki/intermediate/index.txt",
-		RespKeyFile:  "testdata/pki/intermediate/server/key.pem",
-		RespCertFile: "testdata/pki/intermediate/server/cert.pem",
+		RespKeyFile:  "testdata/pki/intermediate/ocsp/key.pem",
+		RespCertFile: "testdata/pki/intermediate/ocsp/cert.pem",
 		CaCertFile:   "testdata/pki/intermediate/cacert.pem",
 		Strict:       true,
 	}
@@ -144,6 +145,11 @@ func (o *OCSPResponder) Verify(rawreq []byte) ([]byte, error) {
 		return nil, errors.New("tls: Could not make key a signer")
 	}
 
+	nextUpdate := time.Now().Add(24 * time.Hour).UTC()
+	if o.NextUpdateOverride != nil {
+		nextUpdate = *o.NextUpdateOverride
+	}
+
 	template := ocsp.Response{
 		Status:           status,
 		SerialNumber:     req.SerialNumber,
@@ -151,8 +157,8 @@ func (o *OCSPResponder) Verify(rawreq []byte) ([]byte, error) {
 		RevocationReason: ocsp.Unspecified,
 		IssuerHash:       req.HashAlgorithm,
 		RevokedAt:        revokedAt,
-		ThisUpdate:       time.Now().AddDate(0, 0, -1).UTC(),
-		NextUpdate:       time.Now().AddDate(0, 0, 1).UTC(),
+		ThisUpdate:       time.Now().Add(-1 * time.Hour).UTC(),
+		NextUpdate:       nextUpdate,
 	}
 
 	resp, err := ocsp.CreateResponse(o.caCert, o.respCert, template, key)

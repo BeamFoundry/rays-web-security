@@ -114,6 +114,24 @@ var _ = Describe("Server Providers", func() {
 			Expect(cfg).To(BeNil())
 		})
 
+		It("returns error when only CertFile is provided", func() {
+			provider := &ServerCertificateProvider{
+				CertFile: "testdata/pki/intermediate/server/cert.pem",
+			}
+			cfg, err := provider.ProvideServerTLS()
+			Expect(err).To(HaveOccurred())
+			Expect(cfg).To(BeNil())
+		})
+
+		It("returns error when only CertKeyFile is provided", func() {
+			provider := &ServerCertificateProvider{
+				CertKeyFile: "testdata/pki/intermediate/server/key.pem",
+			}
+			cfg, err := provider.ProvideServerTLS()
+			Expect(err).To(HaveOccurred())
+			Expect(cfg).To(BeNil())
+		})
+
 		It("returns error when Certificate PEM does not contain private key", func() {
 			cacert, err := os.ReadFile("testdata/pki/cacert.pem")
 			Expect(err).NotTo(HaveOccurred())

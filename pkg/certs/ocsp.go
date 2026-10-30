@@ -1,12 +1,14 @@
 package certs
 
 import (
+	"bytes"
 	"crypto"
 	"crypto/tls"
 	"crypto/x509"
 	"fmt"
 	"net/url"
 	"slices"
+	"sync"
 	"time"
 
 	"github.com/go-resty/resty/v2"
@@ -15,30 +17,21 @@ import (
 
 var ocspCreateRequest = ocsp.CreateRequest
 
+type ocspCacheEntry struct {
+	response  *ocsp.Response
+	expiresAt time.Time
+}
+
 // MutualTLSWithOCSPCustomizer is a struct implementing [ServerTLSCustomizer].
 type MutualTLSWithOCSPCustomizer struct {
-	// TLSProvider adds an optional ClientTLSProvider to configure the OCSP fetch client.
-	//
-	// Default: nil
-	TLSProvider ClientTLSProvider `json:"tls_provider"`
-
-	// Client is an optional resty.Client to use for querying the OCSP server.
-	// If nil, a new resty client will be created.
-	Client *resty.Client `json:"-"`
-
-	// Certificate is either a path to a file or the content of the file instead.
-	// It must be a PEM encoded CA certificate.
-	//
-	// Default: ""
-	Certificate string `json:"certificate"`
-
-	// OCSPServer is the URL of the OCSP responder.
-	// If empty, the OCSP server URL defined in the client CA certificate is used.
-	OCSPServer string `json:"ocsp_server"`
-
-	// Timeout specifies the HTTP request timeout when querying the OCSP server.
-	// Default: 10 * time.Second
-	Timeout time.Duration `json:"timeout"`
+	TLSProvider    ClientTLSProvider `json:"tls_provider"`
+	cache          map[string]*ocspCacheEntry
+	Client         *resty.Client `json:"-"`
+	Certificate    string        `json:"certificate"`
+	OCSPServer     string        `json:"ocsp_server"`
+	Timeout        time.Duration `json:"timeout"`
+	MaxResponseAge time.Duration `json:"max_response_age"`
+	cacheMu        sync.RWMutex
 }
 
 var _ ServerTLSCustomizer = &MutualTLSWithOCSPCustomizer{}
@@ -102,36 +95,90 @@ func (m *MutualTLSWithOCSPCustomizer) CustomizeServerTLS(config *tls.Config) err
 			client.SetTLSClientConfig(tlsConfig)
 		}
 
-		prevVerify := config.VerifyPeerCertificate
-		config.VerifyPeerCertificate = func(rawCerts [][]byte, verifiedChains [][]*x509.Certificate) error { //nolint:gosec // G123: Peer certificate verification for OCSP check
+		m.cacheMu.Lock()
+		if m.cache == nil {
+			m.cache = make(map[string]*ocspCacheEntry)
+		}
+		m.cacheMu.Unlock()
+
+		maxAge := m.MaxResponseAge
+		if maxAge == 0 {
+			maxAge = 24 * time.Hour
+		}
+
+		prevVerify := config.VerifyConnection
+		config.VerifyConnection = func(cs tls.ConnectionState) error {
 			if prevVerify != nil {
-				if err := prevVerify(rawCerts, verifiedChains); err != nil {
+				if err := prevVerify(cs); err != nil {
 					return err
 				}
 			}
-			cert := verifiedChains[0][0]
-			opts := &ocsp.RequestOptions{Hash: crypto.SHA256}
-			buffer, err := ocspCreateRequest(cert, clientCACert, opts)
-			if err != nil {
-				return fmt.Errorf("mtls: %w", err)
+			if len(cs.PeerCertificates) == 0 {
+				return ErrMissingPeerCertificate
 			}
+			cert := cs.PeerCertificates[0]
 
-			resp, err := client.R().
-				SetHeader("Content-Type", "application/ocsp-request").
-				SetHeader("Accept", "application/ocsp-response").
-				SetBody(buffer).
-				Post(ocspServer)
-			if err != nil {
-				return fmt.Errorf("mtls: %w", err)
-			}
+			serialKey := cert.SerialNumber.String()
+			now := timeNow()
 
-			if resp.StatusCode() < 200 || resp.StatusCode() >= 300 {
-				return fmt.Errorf("mtls: failed to query OCSP server: HTTP status %d", resp.StatusCode())
-			}
+			m.cacheMu.RLock()
+			cached, hit := m.cache[serialKey]
+			m.cacheMu.RUnlock()
 
-			ocspResponse, err := ocsp.ParseResponseForCert(resp.Body(), cert, clientCACert)
-			if err != nil {
-				return fmt.Errorf("mtls: %w", err)
+			var ocspResponse *ocsp.Response
+			if hit && now.Before(cached.expiresAt) {
+				ocspResponse = cached.response
+			} else {
+				opts := &ocsp.RequestOptions{Hash: crypto.SHA256}
+				buffer, err := ocspCreateRequest(cert, clientCACert, opts)
+				if err != nil {
+					return fmt.Errorf("mtls: %w", err)
+				}
+
+				resp, err := client.R().
+					SetHeader("Content-Type", "application/ocsp-request").
+					SetHeader("Accept", "application/ocsp-response").
+					SetBody(buffer).
+					Post(ocspServer)
+				if err != nil {
+					return fmt.Errorf("mtls: %w", err)
+				}
+
+				if resp.StatusCode() < 200 || resp.StatusCode() >= 300 {
+					return fmt.Errorf("mtls: failed to query OCSP server: HTTP status %d", resp.StatusCode())
+				}
+
+				parsed, err := ocsp.ParseResponseForCert(resp.Body(), cert, clientCACert)
+				if err != nil {
+					return fmt.Errorf("mtls: %w", err)
+				}
+
+				if parsed.Certificate != nil && !bytes.Equal(parsed.Certificate.Raw, clientCACert.Raw) {
+					if !slices.Contains(parsed.Certificate.ExtKeyUsage, x509.ExtKeyUsageOCSPSigning) {
+						return ErrDelegatedOCSPMissingSigning
+					}
+				}
+
+				if now.Sub(parsed.ThisUpdate) > maxAge {
+					return ErrOCSPResponseTooOld
+				}
+
+				expiresAt := parsed.NextUpdate
+				if expiresAt.IsZero() {
+					expiresAt = parsed.ThisUpdate.Add(maxAge)
+				}
+				if now.After(expiresAt) {
+					return ErrOCSPResponseExpired
+				}
+
+				ocspResponse = parsed
+
+				m.cacheMu.Lock()
+				m.cache[serialKey] = &ocspCacheEntry{
+					response:  ocspResponse,
+					expiresAt: expiresAt,
+				}
+				m.cacheMu.Unlock()
 			}
 
 			switch ocspResponse.Status {

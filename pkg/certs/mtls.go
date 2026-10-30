@@ -41,30 +41,32 @@ func (c *MutualTLSCustomizer) CustomizeServerTLS(cfg *tls.Config) error {
 
 // ClientCertificate provides a way to retrieve the configured Client CA certificate.
 func (c *MutualTLSCustomizer) ClientCertificate() (*x509.Certificate, error) {
-	var certificate *x509.Certificate
+	if c.Certificate == "" {
+		return nil, nil //nolint:nilnil // Returning nil cert without error when certificate is empty is intentional
+	}
+
 	var block *pem.Block
 
-	if c.Certificate != "" {
-		if b, _ := pem.Decode([]byte(c.Certificate)); b != nil {
-			block = b
-		} else {
-			file, err := os.ReadFile(filepath.Clean(c.Certificate))
-			if err != nil {
-				return nil, fmt.Errorf("tls: failed to read file from path: %w", err)
-			}
-			if b, _ := pem.Decode(file); b != nil {
-				block = b
-			}
-		}
-	}
-
-	if block != nil && block.Type == "CERTIFICATE" {
-		cert, err := x509.ParseCertificate(block.Bytes)
+	if b, _ := pem.Decode([]byte(c.Certificate)); b != nil {
+		block = b
+	} else {
+		file, err := os.ReadFile(filepath.Clean(c.Certificate))
 		if err != nil {
-			return nil, fmt.Errorf("tls: cannot load client CA certificate: %w", err)
+			return nil, fmt.Errorf("tls: failed to read file from path: %w", err)
 		}
-		certificate = cert
+		if b, _ := pem.Decode(file); b != nil {
+			block = b
+		}
 	}
 
-	return certificate, nil
+	if block == nil || block.Type != "CERTIFICATE" {
+		return nil, ErrNoCertificatePEMBlock
+	}
+
+	cert, err := x509.ParseCertificate(block.Bytes)
+	if err != nil {
+		return nil, fmt.Errorf("tls: cannot load client CA certificate: %w", err)
+	}
+
+	return cert, nil
 }

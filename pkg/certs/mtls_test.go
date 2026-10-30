@@ -98,12 +98,12 @@ var _ = Describe("MutualTLSCustomizer", func() {
 		Expect(err).To(HaveOccurred())
 	})
 
-	It("returns nil certificate when PEM block is not CERTIFICATE", func() {
+	It("returns error when PEM block is not CERTIFICATE", func() {
 		customizer := &MutualTLSCustomizer{
 			Certificate: "testdata/pki/intermediate/server/key.pem",
 		}
 		cert, err := customizer.ClientCertificate()
-		Expect(err).NotTo(HaveOccurred())
+		Expect(err).To(MatchError(ErrNoCertificatePEMBlock))
 		Expect(cert).To(BeNil())
 	})
 

@@ -9,7 +9,8 @@ Modern enterprise web services require robust transport layer security. While we
 
 - Automated certificate management via **ACME / Let's Encrypt**.
 - Mutual TLS (**mTLS**) for zero-trust service-to-service communication.
-- Real-time certificate validation via **Certificate Revocation Lists (CRL)** and **Online Certificate Status Protocol (OCSP)**.
+- Certificate validation via **Certificate Revocation Lists (CRL)**, which are loaded during TLS configuration and remain in use until the server reloads the TLS configuration with an updated CRL.
+- Real-time certificate validation via **Online Certificate Status Protocol (OCSP)**.
 - Unified, framework-agnostic `*tls.Config` generation.
 
 The `pkg/certs` package provides modular, composable TLS providers and customizers built on Go's standard `crypto/tls` library and powered by `go-resty/resty` for network fetches.
@@ -18,7 +19,7 @@ The `pkg/certs` package provides modular, composable TLS providers and customize
 
 ## 📦 Core Interfaces & Helpers
 
-The package separates configuration into **Providers** (which create a base `*tls.Config`) and **Customizers** (which mutate and augment an existing `*tls.Config`).
+The package separates configuration into **Providers** (which create a base `*tls.Config`) and **Customizers** (which mutate and augment an existing server `*tls.Config`).
 
 ```go
 package certs
@@ -32,30 +33,31 @@ type ServerTLSProvider interface {
 
 // ServerTLSCustomizer mutates an existing server *tls.Config.
 type ServerTLSCustomizer interface {
-    CustomizeServerTLS(*tls.Config) error
+    CustomizeServerTLS(config *tls.Config) error
 }
 
 // ClientTLSProvider produces a client-side *tls.Config.
 type ClientTLSProvider interface {
     ProvideClientTLS() (*tls.Config, error)
 }
-
-// ClientTLSCustomizer mutates an existing client *tls.Config.
-type ClientTLSCustomizer interface {
-    CustomizeClientTLS(*tls.Config) error
-}
 ```
 
-### Chaining with `ConfigureServerTLS` and `ConfigureClientTLS`
+### Server vs. Client Configuration Helpers
 
-You compose a provider with any number of customizers using the functional configuration helpers:
-
-```go
-tlsConfig, err := certs.ConfigureServerTLS(serverProvider, mtlsCustomizer, crlCustomizer)
-if err != nil {
-    log.Fatalf("failed to configure server TLS: %v", err)
-}
-```
+- **`ConfigureServerTLS`**: Accepts a `ServerTLSProvider` and any number of `ServerTLSCustomizer` hooks to compose and mutate the server configuration:
+  ```go
+  tlsConfig, err := certs.ConfigureServerTLS(&serverProvider, &mtlsCustomizer, &crlCustomizer)
+  if err != nil {
+      log.Fatalf("failed to configure server TLS: %v", err)
+  }
+  ```
+- **`ConfigureClientTLS`**: Accepts only a `ClientTLSProvider`. Client options (such as custom root CAs, system certificate inheritance, and client credentials) are configured directly on the provider struct without customizer hooks:
+  ```go
+  tlsConfig, err := certs.ConfigureClientTLS(&clientProvider)
+  if err != nil {
+      log.Fatalf("failed to configure client TLS: %v", err)
+  }
+  ```
 
 ---
 
@@ -63,28 +65,30 @@ if err != nil {
 
 ### 1. `ServerCertificateProvider` (Static Certificates)
 
-Use `ServerCertificateProvider` when loading certificates from local PEM files or memory strings:
+Use `ServerCertificateProvider` when loading certificates from local PEM files or memory strings. Pointer references should be passed when invoking `ConfigureServerTLS`:
 
 ```go
 package main
 
 import (
     "crypto/tls"
+    "log"
+
     "github.com/BeamFoundry/rays-web-security/pkg/certs"
 )
 
 func createServerTLS() (*tls.Config, error) {
     provider := certs.ServerCertificateProvider{
-        CertFile:   "/etc/ssl/certs/server.crt",
-        KeyFile:    "/etc/ssl/private/server.key",
-        MinVersion: tls.VersionTLS13, // Defaults to TLS 1.2 if omitted
+        CertFile:      "/etc/ssl/certs/server.crt",
+        CertKeyFile:   "/etc/ssl/private/server.key",
+        TLSMinVersion: tls.VersionTLS13, // Defaults to tls.VersionTLS12 if omitted
     }
 
-    return certs.ConfigureServerTLS(provider)
+    return certs.ConfigureServerTLS(&provider)
 }
 ```
 
-You can also pass raw PEM strings directly using `Certificate.Certificate` and `Certificate.PrivateKey`.
+You can also pass raw PEM content (combining certificate, intermediate CAs, and private key) directly into `Certificate`.
 
 ### 2. `ACMECertificateProvider` (Let's Encrypt / ACME)
 
@@ -95,6 +99,7 @@ package main
 
 import (
     "crypto/tls"
+
     "github.com/BeamFoundry/rays-web-security/pkg/certs"
     "golang.org/x/crypto/acme/autocert"
 )
@@ -108,11 +113,11 @@ func createAcmeTLS() (*tls.Config, error) {
     }
 
     provider := certs.ACMECertificateProvider{
-        Manager:    manager,
-        MinVersion: tls.VersionTLS13,
+        AutoCertManager: manager,
+        TLSMinVersion:   tls.VersionTLS13,
     }
 
-    return certs.ConfigureServerTLS(provider)
+    return certs.ConfigureServerTLS(&provider)
 }
 ```
 
@@ -120,29 +125,29 @@ func createAcmeTLS() (*tls.Config, error) {
 
 ## 🤝 Mutual TLS (mTLS)
 
-To require and verify client certificates on incoming connections, apply `MutualTLSCustomizer`:
+To require and verify client certificates on incoming connections, apply `MutualTLSCustomizer`. Supply the client CA certificate path or inline PEM in the `Certificate` field:
 
 ```go
 package main
 
 import (
+    "crypto/tls"
+
     "github.com/BeamFoundry/rays-web-security/pkg/certs"
 )
 
 func createMTLSServer() (*tls.Config, error) {
     serverProvider := certs.ServerCertificateProvider{
-        CertFile: "/etc/ssl/certs/server.crt",
-        KeyFile:  "/etc/ssl/private/server.key",
+        CertFile:    "/etc/ssl/certs/server.crt",
+        CertKeyFile: "/etc/ssl/private/server.key",
     }
 
     mtlsCustomizer := certs.MutualTLSCustomizer{
-        ClientCertFiles: []string{
-            "/etc/ssl/certs/client-ca.crt",
-        },
+        Certificate: "/etc/ssl/certs/client-ca.crt",
     }
 
     // Configures ClientAuth: tls.RequireAndVerifyClientCert and adds the CA to ClientCAs
-    return certs.ConfigureServerTLS(serverProvider, mtlsCustomizer)
+    return certs.ConfigureServerTLS(&serverProvider, &mtlsCustomizer)
 }
 ```
 
@@ -150,102 +155,115 @@ func createMTLSServer() (*tls.Config, error) {
 
 ## 📜 Certificate Revocation List (CRL) Verification
 
-To prevent revoked client certificates from authenticating, chain `MutualTLSWithCRLCustomizer`. It installs a secure `VerifyPeerCertificate` callback that checks client certificates against a CRL:
-
-```go
-package main
-
-import (
-    "time"
-    "github.com/BeamFoundry/rays-web-security/pkg/certs"
-)
-
-func createServerWithCRL() (*tls.Config, error) {
-    serverProvider := certs.ServerCertificateProvider{
-        CertFile: "/etc/ssl/certs/server.crt",
-        KeyFile:  "/etc/ssl/private/server.key",
-    }
-
-    crlCustomizer := certs.MutualTLSWithCRLCustomizer{
-        // 1. Can be a local file path: "/etc/ssl/crl/ca.crl"
-        // 2. Can be an HTTP/HTTPS URL: "https://crl.example.com/revoked.crl"
-        // 3. Or leave empty to auto-discover via CA cert CRLDistributionPoints
-        RevocationList: "https://crl.example.com/revoked.crl",
-        Timeout:        10 * time.Second, // Defaults to 5s if omitted
-    }
-
-    return certs.ConfigureServerTLS(serverProvider, crlCustomizer)
-}
-```
-
-### CRL Features:
-* **Multiple Sources:** Supports local file paths, inline PEM strings, remote `http://` or `https://` URLs, and fallback to the issuer certificate's `CRLDistributionPoints` extension.
-* **Format Agnostic:** Automatically handles both PEM-encoded CRLs and binary DER-encoded CRLs.
-* **HTTPS Support:** When fetching CRL over HTTPS, provide a `TLSProvider` to supply client certificates or custom root CAs for the fetch request.
-
----
-
-## ⚡ Online Certificate Status Protocol (OCSP) Verification
-
-OCSP enables real-time verification of certificate revocation without downloading large CRL files:
-
-```go
-package main
-
-import (
-    "time"
-    "github.com/BeamFoundry/rays-web-security/pkg/certs"
-)
-
-func createServerWithOCSP() (*tls.Config, error) {
-    serverProvider := certs.ServerCertificateProvider{
-        CertFile: "/etc/ssl/certs/server.crt",
-        KeyFile:  "/etc/ssl/private/server.key",
-    }
-
-    ocspCustomizer := certs.MutualTLSWithOCSPCustomizer{
-        // Explicit responder URL, or leave empty to auto-discover via certificate AIA OCSPServer
-        OCSPServer: "http://ocsp.example.com",
-        Timeout:    5 * time.Second,
-    }
-
-    return certs.ConfigureServerTLS(serverProvider, ocspCustomizer)
-}
-```
-
-### OCSP Features:
-* **Auto-Discovery:** Automatically falls back to the certificate's Authority Information Access (`OCSPServer`) extension if no explicit `OCSPServer` is configured.
-* **Resty-Powered Client:** Queries the OCSP responder using `resty`, handling ASN.1 DER request serialization and response verification.
-* **Strict Revocation Detection:** Returns `ErrCertificateRevoked` for revoked certificates and `ErrCertificateUnknownOCSP` for unknown certificate statuses.
-
----
-
-## 🌐 Client TLS Configuration
-
-When your application initiates outgoing TLS or mTLS connections (e.g., using `net/http` or `go-resty/resty`), use `ClientCertificateProvider`:
+To prevent revoked client certificates from authenticating, chain `MutualTLSWithCRLCustomizer`. The client CA certificate must be configured in `Certificate` so the customizer can verify the CRL signature and install its `VerifyConnection` callback:
 
 ```go
 package main
 
 import (
     "crypto/tls"
+    "time"
+
+    "github.com/BeamFoundry/rays-web-security/pkg/certs"
+)
+
+func createServerWithCRL() (*tls.Config, error) {
+    serverProvider := certs.ServerCertificateProvider{
+        CertFile:    "/etc/ssl/certs/server.crt",
+        CertKeyFile: "/etc/ssl/private/server.key",
+    }
+
+    crlCustomizer := certs.MutualTLSWithCRLCustomizer{
+        Certificate:    "/etc/ssl/certs/client-ca.crt",
+        RevocationList: "https://crl.example.com/revoked.crl",
+        Timeout:        10 * time.Second, // Defaults to 10s if omitted
+    }
+
+    return certs.ConfigureServerTLS(&serverProvider, &crlCustomizer)
+}
+```
+
+> [!WARNING]
+> When `RevocationList` is left empty, the customizer attempts to auto-discover CRL endpoints from the client CA certificate's `CRLDistributionPoints`. If discovery finds no usable list or if all fetch attempts fail, configuration succeeds without installing a revocation callback, and revoked certificates may pass standard chain verification. For deployments requiring strict revocation guarantees, explicitly configure `RevocationList`.
+
+### CRL Features:
+* **Multiple Sources:** Supports local file paths, inline PEM strings, remote `http://` or `https://` URLs, and fallback to the issuer certificate's `CRLDistributionPoints` extension.
+* **PEM Encoding Required:** Both local and remote CRLs must be PEM-encoded (containing a `-----BEGIN X509 CRL-----` block). Raw binary DER-encoded CRLs are not supported.
+* **HTTPS Support:** When fetching CRL over HTTPS, provide a `TLSProvider` to supply client certificates or custom root CAs for the fetch request.
+* **Validation on Connection:** Runs inside `VerifyConnection`, ensuring revocation checks occur on both full handshakes and resumed TLS sessions.
+
+---
+
+## ⚡ Online Certificate Status Protocol (OCSP) Verification
+
+OCSP enables real-time verification of certificate revocation without downloading entire CRL files. Set the client CA in `Certificate` so the customizer can construct and verify OCSP requests:
+
+```go
+package main
+
+import (
+    "crypto/tls"
+    "time"
+
+    "github.com/BeamFoundry/rays-web-security/pkg/certs"
+)
+
+func createServerWithOCSP() (*tls.Config, error) {
+    serverProvider := certs.ServerCertificateProvider{
+        CertFile:    "/etc/ssl/certs/server.crt",
+        CertKeyFile: "/etc/ssl/private/server.key",
+    }
+
+    ocspCustomizer := certs.MutualTLSWithOCSPCustomizer{
+        Certificate: "/etc/ssl/certs/client-ca.crt",
+        OCSPServer:  "http://ocsp.example.com",
+        Timeout:     5 * time.Second,
+    }
+
+    return certs.ConfigureServerTLS(&serverProvider, &ocspCustomizer)
+}
+```
+
+> [!WARNING]
+> When `OCSPServer` is left empty, the customizer attempts to discover the responder from the certificate's Authority Information Access (`OCSPServer`) extension. If no responder is found, configuration succeeds without installing an OCSP verification callback. Explicitly specify `OCSPServer` when OCSP validation is mandatory.
+
+### OCSP Features:
+* **Delegated Responder Validation:** Delegated OCSP responder certificates must be signed by the CA and include the `OCSPSigning` extended key usage.
+* **Freshness & Expiry Checks:** Rejects responses whose `ThisUpdate` exceeds `MaxResponseAge` (default 24h). When `NextUpdate` is absent, treats the response validity as expiring at `ThisUpdate + MaxResponseAge`.
+* **In-Memory Response Caching:** Caches validated OCSP responses keyed by certificate serial number until `NextUpdate` expires, minimizing network round-trips while preserving fail-closed behavior on responder errors.
+* **Resumption Protection:** Runs inside `VerifyConnection` to validate peer certificates on new and resumed TLS sessions alike.
+
+---
+
+## 🌐 Client TLS Configuration
+
+When your application initiates outgoing TLS or mTLS connections (e.g., using `go-resty/resty`), use `ClientCertificateProvider`:
+
+```go
+package main
+
+import (
+    "crypto/tls"
+
     "github.com/BeamFoundry/rays-web-security/pkg/certs"
     "github.com/go-resty/resty/v2"
 )
 
 func createSecureClient() (*resty.Client, error) {
     clientTLSProvider := certs.ClientCertificateProvider{
-        // Custom CA bundle (falls back to system root pool if omitted)
-        CAFiles: []string{"/etc/ssl/certs/internal-ca.crt"},
+        // Custom CA certificate file or PEM string
+        RootCertificates: "/etc/ssl/certs/internal-ca.crt",
 
-        // Client credentials for outgoing mTLS
-        CertFile: "/etc/ssl/certs/client.crt",
-        KeyFile:  "/etc/ssl/private/client.key",
+        // Explicitly include host system root certificates alongside custom roots
+        IncludeSystemCertificates: true,
 
-        MinVersion: tls.VersionTLS13,
+        // Client certificate and key for outgoing mTLS (PEM file or string with cert + key)
+        Certificate: "/etc/ssl/certs/client-fullchain.pem",
+
+        TLSMinVersion: tls.VersionTLS13,
     }
 
-    tlsConfig, err := certs.ConfigureClientTLS(clientTLSProvider)
+    tlsConfig, err := certs.ConfigureClientTLS(&clientTLSProvider)
     if err != nil {
         return nil, err
     }
@@ -256,11 +274,14 @@ func createSecureClient() (*resty.Client, error) {
 }
 ```
 
+> [!NOTE]
+> Omitting `RootCertificates` creates an empty root pool when client credentials are configured. There is no automatic fallback to the host system root pool; set `IncludeSystemCertificates: true` to include system-trusted root certificates.
+
 ---
 
 ## 🧩 Complete Server Example: ACME + mTLS + OCSP
 
-Here is a full production example configuring an HTTPS server with automated Let's Encrypt certificates, mandatory client certificate verification, and real-time OCSP validation:
+Here is a full production example configuring an HTTPS server on port 443 with automated Let's Encrypt certificates, mandatory client certificate verification, and real-time OCSP validation:
 
 ```go
 package main
@@ -277,33 +298,35 @@ import (
 func main() {
     // 1. Base ACME Provider
     acmeProvider := certs.ACMECertificateProvider{
-        Manager: &autocert.Manager{
+        AutoCertManager: &autocert.Manager{
             Prompt:     autocert.AcceptTOS,
             HostPolicy: autocert.HostWhitelist("secure.example.com"),
             Cache:      autocert.DirCache("/var/cache/autocert"),
             Email:      "admin@example.com",
         },
-        MinVersion: tls.VersionTLS13,
+        TLSMinVersion: tls.VersionTLS13,
     }
 
     // 2. mTLS Customizer
     mtls := certs.MutualTLSCustomizer{
-        ClientCertFiles: []string{"/etc/ssl/certs/client-ca.crt"},
+        Certificate: "/etc/ssl/certs/client-ca.crt",
     }
 
     // 3. OCSP Customizer
     ocsp := certs.MutualTLSWithOCSPCustomizer{
-        Timeout: 3 * time.Second,
+        Certificate: "/etc/ssl/certs/client-ca.crt",
+        Timeout:     3 * time.Second,
     }
 
-    // 4. Assemble *tls.Config
-    tlsConfig, err := certs.ConfigureServerTLS(acmeProvider, mtls, ocsp)
+    // 4. Assemble *tls.Config using pointers
+    tlsConfig, err := certs.ConfigureServerTLS(&acmeProvider, &mtls, &ocsp)
     if err != nil {
         panic(err)
     }
 
+    // 5. ACME TLS-ALPN-01 challenges must reach the server on port 443
     server := &http.Server{
-        Addr:      ":8443",
+        Addr:      ":443",
         TLSConfig: tlsConfig,
     }
 

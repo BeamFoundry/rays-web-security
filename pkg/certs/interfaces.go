@@ -3,7 +3,10 @@ package certs
 import (
 	"crypto/tls"
 	"errors"
+	"time"
 )
+
+var timeNow = time.Now
 
 const (
 	schemeHTTP  = "http"
@@ -28,6 +31,30 @@ var (
 
 	// ErrTLSProviderRequiredHTTPS is returned when querying an HTTPS OCSP server without a configured TLSProvider.
 	ErrTLSProviderRequiredHTTPS = errors.New("mtls: TLSProvider is required for https OCSP server")
+
+	// ErrMissingPeerCertificate is returned when a TLS connection has no peer certificates.
+	ErrMissingPeerCertificate = errors.New("tls: missing peer certificate")
+
+	// ErrCRLExpired is returned when a CRL's NextUpdate date is in the past.
+	ErrCRLExpired = errors.New("tls: CRL has expired")
+
+	// ErrNoCertificatePEMBlock is returned when no PEM CERTIFICATE block is found in the certificate string or file.
+	ErrNoCertificatePEMBlock = errors.New("tls: no PEM certificate block found in configured certificate")
+
+	// ErrIncompleteCertKeyFile is returned when exactly one of CertFile and CertKeyFile is configured.
+	ErrIncompleteCertKeyFile = errors.New("tls: both CertFile and CertKeyFile must be provided")
+
+	// ErrNoUsableCRL is returned when CRL discovery cannot find or fetch any usable CRL.
+	ErrNoUsableCRL = errors.New("tls: no usable CRL found")
+
+	// ErrDelegatedOCSPMissingSigning is returned when a delegated OCSP responder lacks the OCSPSigning extended key usage.
+	ErrDelegatedOCSPMissingSigning = errors.New("tls: delegated OCSP responder certificate is missing OCSPSigning extended key usage")
+
+	// ErrOCSPResponseTooOld is returned when an OCSP response's ThisUpdate exceeds the maximum allowed age.
+	ErrOCSPResponseTooOld = errors.New("tls: OCSP response is too old")
+
+	// ErrOCSPResponseExpired is returned when an OCSP response has expired past its NextUpdate date.
+	ErrOCSPResponseExpired = errors.New("tls: OCSP response has expired")
 )
 
 // ServerTLSProvider provides an interface for creating a [*tls.Config] to be used by a server.

@@ -2,6 +2,7 @@ package certs
 
 import (
 	"crypto/x509"
+	"time"
 
 	"golang.org/x/crypto/ocsp"
 )
@@ -21,5 +22,14 @@ func SetOCSPCreateRequestForTest(fn func(cert, issuer *x509.Certificate, opts *o
 	ocspCreateRequest = fn
 	return func() {
 		ocspCreateRequest = orig
+	}
+}
+
+// SetTimeNowForTest sets timeNow for testing.
+func SetTimeNowForTest(fn func() time.Time) func() {
+	orig := timeNow
+	timeNow = fn
+	return func() {
+		timeNow = orig
 	}
 }

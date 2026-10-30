@@ -3,12 +3,12 @@ package certs_test
 import (
 	"context"
 	"crypto/tls"
-	"crypto/x509"
 	"errors"
 	"net"
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"time"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -204,10 +204,43 @@ var _ = Describe("MutualTLSWithCRLCustomizer", func() {
 		cfg := &tls.Config{MinVersion: tls.VersionTLS12}
 		err = customizer.CustomizeServerTLS(cfg)
 		Expect(err).NotTo(HaveOccurred())
-		Expect(cfg.VerifyPeerCertificate).NotTo(BeNil())
+		Expect(cfg.VerifyConnection).NotTo(BeNil())
 	})
 
-	It("chains with existing VerifyPeerCertificate callback", func() {
+	It("returns error when CA certificate has no CRLDistributionPoints and RevocationList is empty", func() {
+		customizer := &MutualTLSWithCRLCustomizer{
+			Certificate: "testdata/pki/cacert.pem",
+		}
+		cfg := &tls.Config{MinVersion: tls.VersionTLS12}
+		err := customizer.CustomizeServerTLS(cfg)
+		Expect(err).To(MatchError(ErrNoUsableCRL))
+	})
+
+	It("returns error when CRL discovery fails for all distribution points", func() {
+		customizer := &MutualTLSWithCRLCustomizer{
+			Certificate: "testdata/pki/intermediate/cacert.pem",
+		}
+		cfg := &tls.Config{MinVersion: tls.VersionTLS12}
+		err := customizer.CustomizeServerTLS(cfg)
+		Expect(err).To(MatchError(ErrNoUsableCRL))
+	})
+
+	It("returns error when CRL is expired", func() {
+		restore := SetTimeNowForTest(func() time.Time {
+			return time.Date(2040, 1, 1, 0, 0, 0, 0, time.UTC)
+		})
+		defer restore()
+
+		customizer := &MutualTLSWithCRLCustomizer{
+			Certificate:    "testdata/pki/intermediate/cacert.pem",
+			RevocationList: "testdata/pki/intermediate/crl.pem",
+		}
+		cfg := &tls.Config{MinVersion: tls.VersionTLS12}
+		err := customizer.CustomizeServerTLS(cfg)
+		Expect(err).To(MatchError(ErrCRLExpired))
+	})
+
+	It("chains with existing VerifyConnection callback", func() {
 		customizer := &MutualTLSWithCRLCustomizer{
 			Certificate:    "testdata/pki/intermediate/cacert.pem",
 			RevocationList: "testdata/pki/intermediate/crl.pem",
@@ -216,16 +249,28 @@ var _ = Describe("MutualTLSWithCRLCustomizer", func() {
 		prevErr := errors.New("previous verification failed")
 		cfg := &tls.Config{
 			MinVersion: tls.VersionTLS12,
-			VerifyPeerCertificate: func(_ [][]byte, _ [][]*x509.Certificate) error {
+			VerifyConnection: func(_ tls.ConnectionState) error {
 				called = true
 				return prevErr
 			},
 		}
 		err := customizer.CustomizeServerTLS(cfg)
 		Expect(err).NotTo(HaveOccurred())
-		err = cfg.VerifyPeerCertificate(nil, nil)
+		err = cfg.VerifyConnection(tls.ConnectionState{})
 		Expect(err).To(MatchError(prevErr))
 		Expect(called).To(BeTrue())
+	})
+
+	It("returns error when VerifyConnection has no peer certificates", func() {
+		customizer := &MutualTLSWithCRLCustomizer{
+			Certificate:    "testdata/pki/intermediate/cacert.pem",
+			RevocationList: "testdata/pki/intermediate/crl.pem",
+		}
+		cfg := &tls.Config{MinVersion: tls.VersionTLS12}
+		err := customizer.CustomizeServerTLS(cfg)
+		Expect(err).NotTo(HaveOccurred())
+		err = cfg.VerifyConnection(tls.ConnectionState{})
+		Expect(err).To(MatchError(ErrMissingPeerCertificate))
 	})
 
 	It("verifies client certificates against CRL loaded from file", func() {
