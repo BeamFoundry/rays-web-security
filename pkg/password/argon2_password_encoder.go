@@ -1,7 +1,6 @@
 package password
 
 import (
-	"crypto/rand"
 	"crypto/subtle"
 	"encoding/base64"
 	"fmt"
@@ -19,6 +18,8 @@ const (
 	Argon2DefaultParallelism = 1
 	Argon2DefaultMemory      = 1 << 14 // 16384 KiB (16 MiB)
 	Argon2DefaultIterations  = 2
+	Argon2MaxMemoryKiB       = 1 << 20 // 1048576 KiB (1 GiB)
+	Argon2MinHashLength      = 16
 )
 
 // Argon2PasswordEncoder implements [core.PasswordEncoder] using the Argon2 hashing algorithm
@@ -62,7 +63,7 @@ func (this *Argon2PasswordEncoder) Encode(password []byte) ([]byte, error) {
 		saltLength = Argon2DefaultSaltLength
 	}
 	salt := make([]byte, saltLength)
-	if _, err := rand.Read(salt); err != nil {
+	if _, err := randReader.Read(salt); err != nil {
 		return []byte(""), err
 	}
 
@@ -103,7 +104,7 @@ func (this *Argon2PasswordEncoder) Matches(password, encoded []byte) bool {
 	}
 	idx := 1
 	algoType := parts[idx]
-	if algoType != "argon2id" && algoType != "argon2i" && algoType != "argon2d" {
+	if algoType != "argon2id" && algoType != "argon2i" {
 		return false
 	}
 	idx++
@@ -133,14 +134,25 @@ func (this *Argon2PasswordEncoder) Matches(password, encoded []byte) bool {
 		}
 		switch kv[0] {
 		case "m":
+			if val == 0 || val > Argon2MaxMemoryKiB {
+				return false
+			}
 			memory = uint32(val)
 			hasM = true
 		case "t":
+			if val == 0 {
+				return false
+			}
 			iterations = uint32(val)
 			hasT = true
 		case "p":
+			if val == 0 || val > 255 {
+				return false
+			}
 			parallelism = uint8(val)
 			hasP = true
+		default:
+			// Ignore unrecognized parameters
 		}
 	}
 
@@ -149,24 +161,23 @@ func (this *Argon2PasswordEncoder) Matches(password, encoded []byte) bool {
 	}
 
 	salt, err := decodeBase64(parts[idx])
-	if err != nil {
+	if err != nil || len(salt) == 0 {
 		return false
 	}
 	expectedHash, err := decodeBase64(parts[idx+1])
-	if err != nil {
+	if err != nil || len(expectedHash) < Argon2MinHashLength || len(expectedHash) > 1024 {
 		return false
 	}
 
 	var computedHash []byte
+	// #nosec G115 - expectedHash length is validated to be between Argon2MinHashLength and 1024
+	hashLen := uint32(len(expectedHash))
 	if algoType == "argon2i" {
-		computedHash = argon2.Key(password, salt, iterations, memory, parallelism, uint32(len(expectedHash)))
+		computedHash = argon2.Key(password, salt, iterations, memory, parallelism, hashLen)
 	} else {
-		computedHash = argon2.IDKey(password, salt, iterations, memory, parallelism, uint32(len(expectedHash)))
+		computedHash = argon2.IDKey(password, salt, iterations, memory, parallelism, hashLen)
 	}
 
-	if len(computedHash) != len(expectedHash) {
-		return false
-	}
 	return subtle.ConstantTimeCompare(expectedHash, computedHash) == 1
 }
 
@@ -174,5 +185,9 @@ func decodeBase64(s string) ([]byte, error) {
 	if b, err := base64.RawStdEncoding.DecodeString(s); err == nil {
 		return b, nil
 	}
-	return base64.StdEncoding.DecodeString(s)
+	b, err := base64.StdEncoding.DecodeString(s)
+	if err != nil {
+		return nil, fmt.Errorf("decode base64: %w", err)
+	}
+	return b, nil
 }

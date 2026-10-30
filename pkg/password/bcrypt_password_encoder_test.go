@@ -22,11 +22,17 @@ var _ = Describe("BCryptPasswordEncoder", func() {
 		Expect(encoder.Matches([]byte("bad"), encoded)).To(BeFalse())
 	})
 
-	It("can use NewDefault()", func() {
+	It("can use NewDefault() and handles zero strength default", func() {
 		encoder := BCryptPasswordEncoder{}.NewDefault()
 		password := []byte("DefaultBCrypt")
 		encoded, err := encoder.Encode(password)
 		Expect(err).NotTo(HaveOccurred())
 		Expect(encoder.Matches(password, encoded)).To(BeTrue())
+
+		// Zero strength defaults to BCryptDefaultCost
+		encoderZero := &BCryptPasswordEncoder{}
+		encodedZero, err := encoderZero.Encode(password)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(encoderZero.Matches(password, encodedZero)).To(BeTrue())
 	})
 })

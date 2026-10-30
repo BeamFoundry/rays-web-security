@@ -1,7 +1,6 @@
 package password
 
 import (
-	"crypto/rand"
 	"crypto/subtle"
 	"encoding/base64"
 	"fmt"
@@ -20,6 +19,10 @@ const (
 	SCryptDefaultParallelism = 1     // (p)
 	SCryptDefaultKeyLength   = 32    // (dkLen)
 	SCryptDefaultSaltLength  = 16
+	SCryptMaxCpuCost         = 1 << 20 // 1048576
+	SCryptMaxLn              = 20
+	SCryptMaxMemoryCost      = 64
+	SCryptMaxParallelism     = 64
 )
 
 // SCryptPasswordEncoder implements [core.PasswordEncoder] using the SCrypt key derivation function.
@@ -82,7 +85,7 @@ func (this *SCryptPasswordEncoder) Encode(password []byte) ([]byte, error) {
 	}
 
 	salt := make([]byte, saltLength)
-	if _, err := rand.Read(salt); err != nil {
+	if _, err := randReader.Read(salt); err != nil {
 		return []byte(""), err
 	}
 
@@ -112,31 +115,27 @@ func (this *SCryptPasswordEncoder) Matches(password, encoded []byte) bool {
 			return false
 		}
 		salt, err := decodeBase64(parts[2])
-		if err != nil {
+		if err != nil || len(salt) == 0 {
 			return false
 		}
 		derived, err := decodeBase64(parts[3])
-		if err != nil {
+		if err != nil || len(derived) == 0 {
 			return false
 		}
 
 		log2N := int((params >> 16) & 0xffff)
+		if log2N < 1 || log2N > SCryptMaxLn {
+			return false
+		}
 		cpuCost := 1 << log2N
 		memoryCost := int((params >> 8) & 0xff)
 		parallelism := int(params & 0xff)
 
-		if cpuCost <= 1 || memoryCost < 1 || parallelism < 1 {
+		if cpuCost <= 1 || cpuCost > SCryptMaxCpuCost || memoryCost < 1 || memoryCost > SCryptMaxMemoryCost || parallelism < 1 || parallelism > SCryptMaxParallelism {
 			return false
 		}
 
-		generated, err := scrypt.Key(password, salt, cpuCost, memoryCost, parallelism, len(derived))
-		if err != nil {
-			return false
-		}
-
-		if len(derived) != len(generated) {
-			return false
-		}
+		generated, _ := scrypt.Key(password, salt, cpuCost, memoryCost, parallelism, len(derived)) //nolint:errcheck // parameters are validated above
 		return subtle.ConstantTimeCompare(derived, generated) == 1
 	}
 
@@ -155,36 +154,43 @@ func (this *SCryptPasswordEncoder) Matches(password, encoded []byte) bool {
 			}
 			switch kv[0] {
 			case "ln":
+				if val < 1 || val > SCryptMaxLn {
+					return false
+				}
 				cpuCost = 1 << val
 			case "N":
+				if val <= 1 || val > SCryptMaxCpuCost || (val&(val-1)) != 0 {
+					return false
+				}
 				cpuCost = val
 			case "r":
+				if val < 1 || val > SCryptMaxMemoryCost {
+					return false
+				}
 				memoryCost = val
 			case "p":
+				if val < 1 || val > SCryptMaxParallelism {
+					return false
+				}
 				parallelism = val
+			default:
+				// Ignore unrecognized parameters
 			}
 		}
-		if cpuCost <= 1 || memoryCost < 1 || parallelism < 1 {
+		if cpuCost <= 1 || cpuCost > SCryptMaxCpuCost || memoryCost < 1 || memoryCost > SCryptMaxMemoryCost || parallelism < 1 || parallelism > SCryptMaxParallelism {
 			return false
 		}
 
 		salt, err := decodeBase64(parts[3])
-		if err != nil {
+		if err != nil || len(salt) == 0 {
 			return false
 		}
 		derived, err := decodeBase64(parts[4])
-		if err != nil {
+		if err != nil || len(derived) == 0 {
 			return false
 		}
 
-		generated, err := scrypt.Key(password, salt, cpuCost, memoryCost, parallelism, len(derived))
-		if err != nil {
-			return false
-		}
-
-		if len(derived) != len(generated) {
-			return false
-		}
+		generated, _ := scrypt.Key(password, salt, cpuCost, memoryCost, parallelism, len(derived)) //nolint:errcheck // parameters are validated above
 		return subtle.ConstantTimeCompare(derived, generated) == 1
 	}
 

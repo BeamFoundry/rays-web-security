@@ -1,13 +1,14 @@
 package password
 
 import (
-	"crypto/rand"
-	"crypto/sha1"
+	"crypto"
+	"crypto/sha1" // #nosec G505 - PBKDF2 with SHA-1 is supported for Spring Security legacy compatibility
 	"crypto/sha256"
 	"crypto/sha512"
 	"crypto/subtle"
 	"encoding/base64"
 	"encoding/hex"
+	"fmt"
 	"hash"
 	"strconv"
 	"strings"
@@ -22,16 +23,17 @@ const (
 	Pbkdf2DefaultIterations = 310000
 	Pbkdf2DefaultKeyLength  = 32 // 256 bits
 	Pbkdf2DefaultAlgorithm  = "PBKDF2WithHmacSHA256"
+	Pbkdf2MaxIterations     = 5000000
 )
 
 // Pbkdf2PasswordEncoder implements [core.PasswordEncoder] using the PBKDF2 key derivation function.
 // It defaults to PBKDF2 with HMAC-SHA256 and Hex encoding, compatible with Spring Security's Pbkdf2PasswordEncoder.
 type Pbkdf2PasswordEncoder struct {
+	algorithm          string
 	secret             []byte
 	saltLength         int
 	iterations         int
 	keyLength          int
-	algorithm          string
 	encodeHashAsBase64 bool
 }
 
@@ -67,21 +69,35 @@ func (this *Pbkdf2PasswordEncoder) SetEncodeHashAsBase64(encodeHashAsBase64 bool
 	return this
 }
 
-func getPbkdf2HashFunc(algorithm string) func() hash.Hash {
-	switch strings.ToUpper(strings.TrimSpace(algorithm)) {
-	case "PBKDF2WITHHMACSHA512", "SHA512", "SHA-512":
-		return sha512.New
-	case "PBKDF2WITHHMACSHA1", "SHA1", "SHA-1":
-		return sha1.New
-	case "PBKDF2WITHHMACSHA256", "SHA256", "SHA-256", "":
-		return sha256.New
+func getPbkdf2HashFunc(algorithm string) (func() hash.Hash, error) {
+	trimmed := strings.TrimSpace(algorithm)
+	if trimmed == "" {
+		return sha256.New, nil
+	}
+	sha512Str := crypto.SHA512.String()
+	sha1Str := crypto.SHA1.String()
+	sha256Str := crypto.SHA256.String()
+
+	upper := strings.ToUpper(trimmed)
+	switch upper {
+	case "PBKDF2WITHHMACSHA512", "SHA512", sha512Str:
+		return sha512.New, nil
+	case "PBKDF2WITHHMACSHA1", "SHA1", sha1Str:
+		return sha1.New, nil
+	case "PBKDF2WITHHMACSHA256", "SHA256", sha256Str:
+		return sha256.New, nil
 	default:
-		return sha256.New
+		return nil, fmt.Errorf("unsupported PBKDF2 algorithm: %s", algorithm)
 	}
 }
 
 // Encode implements [core.PasswordEncoder].
 func (this *Pbkdf2PasswordEncoder) Encode(password []byte) ([]byte, error) {
+	hashFunc, err := getPbkdf2HashFunc(this.algorithm)
+	if err != nil {
+		return []byte(""), err
+	}
+
 	saltLength := this.saltLength
 	if saltLength <= 0 {
 		saltLength = Pbkdf2DefaultSaltLength
@@ -90,13 +106,16 @@ func (this *Pbkdf2PasswordEncoder) Encode(password []byte) ([]byte, error) {
 	if iterations <= 0 {
 		iterations = Pbkdf2DefaultIterations
 	}
+	if iterations > Pbkdf2MaxIterations {
+		return []byte(""), fmt.Errorf("iterations %d exceeds maximum allowed %d", iterations, Pbkdf2MaxIterations)
+	}
 	keyLength := this.keyLength
 	if keyLength <= 0 {
 		keyLength = Pbkdf2DefaultKeyLength
 	}
 
 	salt := make([]byte, saltLength)
-	if _, err := rand.Read(salt); err != nil {
+	if _, err := randReader.Read(salt); err != nil {
 		return []byte(""), err
 	}
 
@@ -105,11 +124,12 @@ func (this *Pbkdf2PasswordEncoder) Encode(password []byte) ([]byte, error) {
 		saltAndSecret = append(saltAndSecret, this.secret...)
 	}
 
-	hashFunc := getPbkdf2HashFunc(this.algorithm)
 	derived := pbkdf2.Key(password, saltAndSecret, iterations, keyLength, hashFunc)
 
 	// Spring Security format: salt concatenated with derived hash
-	combined := append(salt, derived...)
+	combined := make([]byte, 0, len(salt)+len(derived))
+	combined = append(combined, salt...)
+	combined = append(combined, derived...)
 
 	var result string
 	if this.encodeHashAsBase64 {
@@ -133,15 +153,21 @@ func (this *Pbkdf2PasswordEncoder) Matches(password, encoded []byte) bool {
 	if iterations <= 0 {
 		iterations = Pbkdf2DefaultIterations
 	}
-	hashFunc := getPbkdf2HashFunc(this.algorithm)
+
+	hashFunc, err := getPbkdf2HashFunc(this.algorithm)
+	if err != nil {
+		return false
+	}
 
 	// Check if modular crypt / Django or PHC format: e.g. pbkdf2_sha256$... or $pbkdf2-sha256$...
 	if strings.Contains(encodedStr, "$") {
 		parts := strings.Split(encodedStr, "$")
 		// Django format: pbkdf2_sha256$iterations$salt$hash
 		if len(parts) == 4 && strings.HasPrefix(parts[0], "pbkdf2_") {
-			iter, err := strconv.Atoi(parts[1])
-			if err != nil {
+			var iter int
+			var parseErr error
+			iter, parseErr = strconv.Atoi(parts[1])
+			if parseErr != nil || iter <= 0 || iter > Pbkdf2MaxIterations {
 				return false
 			}
 			var hFunc func() hash.Hash
@@ -153,11 +179,14 @@ func (this *Pbkdf2PasswordEncoder) Matches(password, encoded []byte) bool {
 			case "pbkdf2_sha1":
 				hFunc = sha1.New
 			default:
-				hFunc = hashFunc
+				return false
 			}
 			salt := []byte(parts[2])
-			expectedHash, err := decodeBase64(parts[3])
-			if err != nil {
+			if len(salt) == 0 {
+				return false
+			}
+			expectedHash, decodeErr := decodeBase64(parts[3])
+			if decodeErr != nil || len(expectedHash) == 0 {
 				return false
 			}
 			saltAndSecret := append([]byte(nil), salt...)
@@ -171,29 +200,40 @@ func (this *Pbkdf2PasswordEncoder) Matches(password, encoded []byte) bool {
 		// PHC format: $pbkdf2-sha256$i=310000$<salt>$<hash>
 		if len(parts) >= 5 && strings.HasPrefix(parts[1], "pbkdf2") {
 			var iter int
+			var hasIter bool
 			for _, p := range strings.Split(parts[2], ",") {
 				kv := strings.SplitN(p, "=", 2)
 				if len(kv) == 2 && kv[0] == "i" {
-					iter, _ = strconv.Atoi(kv[1])
+					var parseErr error
+					iter, parseErr = strconv.Atoi(kv[1])
+					if parseErr != nil {
+						return false
+					}
+					hasIter = true
 				}
 			}
-			if iter <= 0 {
-				iter = iterations
-			}
-			var hFunc func() hash.Hash
-			if strings.Contains(parts[1], "sha512") {
-				hFunc = sha512.New
-			} else if strings.Contains(parts[1], "sha1") {
-				hFunc = sha1.New
-			} else {
-				hFunc = sha256.New
-			}
-			salt, err := decodeBase64(parts[3])
-			if err != nil {
+			if !hasIter || iter <= 0 || iter > Pbkdf2MaxIterations {
 				return false
 			}
-			expectedHash, err := decodeBase64(parts[4])
-			if err != nil {
+			var hFunc func() hash.Hash
+			switch parts[1] {
+			case "pbkdf2-sha512":
+				hFunc = sha512.New
+			case "pbkdf2-sha256":
+				hFunc = sha256.New
+			case "pbkdf2-sha1":
+				hFunc = sha1.New
+			case "pbkdf2":
+				hFunc = hashFunc
+			default:
+				return false
+			}
+			salt, saltErr := decodeBase64(parts[3])
+			if saltErr != nil || len(salt) == 0 {
+				return false
+			}
+			expectedHash, hashErr := decodeBase64(parts[4])
+			if hashErr != nil || len(expectedHash) == 0 {
 				return false
 			}
 			saltAndSecret := append([]byte(nil), salt...)
@@ -206,21 +246,25 @@ func (this *Pbkdf2PasswordEncoder) Matches(password, encoded []byte) bool {
 	}
 
 	// Standard Spring Security format: Hex or Base64 of (salt || hash)
+	if iterations <= 0 || iterations > Pbkdf2MaxIterations {
+		return false
+	}
+
 	var digested []byte
-	var err error
+	var decodeErr error
 	if this.encodeHashAsBase64 {
-		digested, err = decodeBase64(encodedStr)
-		if err != nil {
-			digested, err = hex.DecodeString(encodedStr)
+		digested, decodeErr = decodeBase64(encodedStr)
+		if decodeErr != nil {
+			digested, decodeErr = hex.DecodeString(encodedStr)
 		}
 	} else {
-		digested, err = hex.DecodeString(encodedStr)
-		if err != nil {
-			digested, err = decodeBase64(encodedStr)
+		digested, decodeErr = hex.DecodeString(encodedStr)
+		if decodeErr != nil {
+			digested, decodeErr = decodeBase64(encodedStr)
 		}
 	}
 
-	if err != nil || len(digested) <= saltLength {
+	if decodeErr != nil || len(digested) <= saltLength {
 		return false
 	}
 
@@ -233,9 +277,5 @@ func (this *Pbkdf2PasswordEncoder) Matches(password, encoded []byte) bool {
 	}
 
 	computed := pbkdf2.Key(password, saltAndSecret, iterations, len(expectedHash), hashFunc)
-	if len(computed) != len(expectedHash) {
-		return false
-	}
-
 	return subtle.ConstantTimeCompare(expectedHash, computed) == 1
 }
