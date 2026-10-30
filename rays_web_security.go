@@ -18,6 +18,7 @@
 //   - [github.com/BeamFoundry/rays-web-security/pkg/auth]: Contains concrete `AuthenticationProvider` implementations.
 //   - [github.com/BeamFoundry/rays-web-security/pkg/password]: Contains concrete `PasswordEncoder` implementations.
 //   - [github.com/BeamFoundry/rays-web-security/pkg/rememberme]: Contains `RememberMeService` implementations.
+//   - [github.com/BeamFoundry/rays-web-security/pkg/certs]: Contains TLS configuration providers and customizers for server, client, mTLS, CRL, and OCSP verification.
 //   - [github.com/BeamFoundry/rays-web-security/pkg/testing]: Contains in-memory mock implementations for Ginkgo test suites.
 package rays_web_security //nolint:revive // Ignoring package naming hint
 

@@ -18,3 +18,4 @@ your HTTP endpoints using clean, fluent builder chains.
 4. [Security Chains & Authorization](/rays-web-security/docs/4-security-chains/)
 5. [The Security Context](/rays-web-security/docs/5-security-context/)
 6. [Testing](/rays-web-security/docs/6-testing/)
+7. [Certificates & TLS](/rays-web-security/docs/7-certificates/)

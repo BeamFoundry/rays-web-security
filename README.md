@@ -41,6 +41,7 @@ To prevent circular dependencies and maintain clean boundaries, Rays Web Securit
 *   `.../pkg/auth`: Contains concrete `AuthenticationProvider` implementations.
 *   `.../pkg/password`: Contains concrete `PasswordEncoder` implementations.
 *   `.../pkg/rememberme`: Contains `RememberMeService` implementations.
+*   `.../pkg/certs`: Contains TLS configuration providers and customizers for server, client, mTLS, CRL, and OCSP verification.
 *   `.../pkg/testing`: Contains in-memory mock implementations for Ginkgo test suites.
 
 ### 🧹 Simplifying with Dot Imports
