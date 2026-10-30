@@ -55,6 +55,12 @@ var (
 
 	// ErrOCSPResponseExpired is returned when an OCSP response has expired past its NextUpdate date.
 	ErrOCSPResponseExpired = errors.New("tls: OCSP response has expired")
+
+	// ErrDelegatedOCSPInvalidValidity is returned when the current time is outside a delegated OCSP responder's validity period.
+	ErrDelegatedOCSPInvalidValidity = errors.New("tls: delegated OCSP responder certificate is not valid at the current time")
+
+	// ErrOCSPThisUpdateInFuture is returned when an OCSP response's ThisUpdate is in the future.
+	ErrOCSPThisUpdateInFuture = errors.New("tls: OCSP response ThisUpdate is in the future")
 )
 
 // ServerTLSProvider provides an interface for creating a [*tls.Config] to be used by a server.

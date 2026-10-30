@@ -46,6 +46,7 @@ type OCSPResponder struct {
 	caCert             *x509.Certificate
 	respCert           *x509.Certificate
 	NextUpdateOverride *time.Time
+	ThisUpdateOverride *time.Time
 	indexModTime       time.Time
 	indexEntries       []IndexEntry
 }
@@ -145,6 +146,11 @@ func (o *OCSPResponder) Verify(rawreq []byte) ([]byte, error) {
 		return nil, errors.New("tls: Could not make key a signer")
 	}
 
+	thisUpdate := time.Now().Add(-1 * time.Hour).UTC()
+	if o.ThisUpdateOverride != nil {
+		thisUpdate = *o.ThisUpdateOverride
+	}
+
 	nextUpdate := time.Now().Add(24 * time.Hour).UTC()
 	if o.NextUpdateOverride != nil {
 		nextUpdate = *o.NextUpdateOverride
@@ -157,7 +163,7 @@ func (o *OCSPResponder) Verify(rawreq []byte) ([]byte, error) {
 		RevocationReason: ocsp.Unspecified,
 		IssuerHash:       req.HashAlgorithm,
 		RevokedAt:        revokedAt,
-		ThisUpdate:       time.Now().Add(-1 * time.Hour).UTC(),
+		ThisUpdate:       thisUpdate,
 		NextUpdate:       nextUpdate,
 	}
 

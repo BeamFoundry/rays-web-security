@@ -157,15 +157,22 @@ func (m *MutualTLSWithOCSPCustomizer) CustomizeServerTLS(config *tls.Config) err
 					if !slices.Contains(parsed.Certificate.ExtKeyUsage, x509.ExtKeyUsageOCSPSigning) {
 						return ErrDelegatedOCSPMissingSigning
 					}
+					if now.Before(parsed.Certificate.NotBefore) || now.After(parsed.Certificate.NotAfter) {
+						return ErrDelegatedOCSPInvalidValidity
+					}
 				}
 
+				if parsed.ThisUpdate.After(now) {
+					return ErrOCSPThisUpdateInFuture
+				}
 				if now.Sub(parsed.ThisUpdate) > maxAge {
 					return ErrOCSPResponseTooOld
 				}
 
+				maxLimit := parsed.ThisUpdate.Add(maxAge)
 				expiresAt := parsed.NextUpdate
-				if expiresAt.IsZero() {
-					expiresAt = parsed.ThisUpdate.Add(maxAge)
+				if expiresAt.IsZero() || expiresAt.After(maxLimit) {
+					expiresAt = maxLimit
 				}
 				if now.After(expiresAt) {
 					return ErrOCSPResponseExpired

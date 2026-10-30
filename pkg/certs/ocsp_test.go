@@ -521,4 +521,142 @@ var _ = Describe("MutualTLSWithOCSPCustomizer", func() {
 		err = serverCfg.VerifyConnection(tls.ConnectionState{PeerCertificates: []*x509.Certificate{clientCert}})
 		Expect(err).NotTo(HaveOccurred())
 	})
+
+	It("fails when delegated OCSP responder certificate is not yet valid", func() {
+		restore := SetTimeNowForTest(func() time.Time {
+			return time.Date(2025, 1, 1, 0, 0, 0, 0, time.UTC)
+		})
+		defer restore()
+
+		responder, err := NewOCSPResponder()
+		Expect(err).NotTo(HaveOccurred())
+
+		ocspAddr, ocspCleanup := startOCSPResponder(responder)
+		defer ocspCleanup()
+
+		serverProv := &ServerCertificateProvider{
+			Certificate: "testdata/pki/intermediate/server/fullchain.pem",
+		}
+		serverCfg, err := serverProv.ProvideServerTLS()
+		Expect(err).NotTo(HaveOccurred())
+
+		customizer := &MutualTLSWithOCSPCustomizer{
+			Certificate: "testdata/pki/intermediate/cacert.pem",
+			OCSPServer:  "http://" + ocspAddr,
+		}
+		err = customizer.CustomizeServerTLS(serverCfg)
+		Expect(err).NotTo(HaveOccurred())
+
+		clientCert, err := parseCertFile("testdata/pki/intermediate/client/cert.pem")
+		Expect(err).NotTo(HaveOccurred())
+
+		err = serverCfg.VerifyConnection(tls.ConnectionState{PeerCertificates: []*x509.Certificate{clientCert}})
+		Expect(err).To(MatchError(ErrDelegatedOCSPInvalidValidity))
+	})
+
+	It("fails when delegated OCSP responder certificate is expired", func() {
+		restore := SetTimeNowForTest(func() time.Time {
+			return time.Date(2037, 1, 1, 0, 0, 0, 0, time.UTC)
+		})
+		defer restore()
+
+		responder, err := NewOCSPResponder()
+		Expect(err).NotTo(HaveOccurred())
+
+		ocspAddr, ocspCleanup := startOCSPResponder(responder)
+		defer ocspCleanup()
+
+		serverProv := &ServerCertificateProvider{
+			Certificate: "testdata/pki/intermediate/server/fullchain.pem",
+		}
+		serverCfg, err := serverProv.ProvideServerTLS()
+		Expect(err).NotTo(HaveOccurred())
+
+		customizer := &MutualTLSWithOCSPCustomizer{
+			Certificate: "testdata/pki/intermediate/cacert.pem",
+			OCSPServer:  "http://" + ocspAddr,
+		}
+		err = customizer.CustomizeServerTLS(serverCfg)
+		Expect(err).NotTo(HaveOccurred())
+
+		clientCert, err := parseCertFile("testdata/pki/intermediate/client/cert.pem")
+		Expect(err).NotTo(HaveOccurred())
+
+		err = serverCfg.VerifyConnection(tls.ConnectionState{PeerCertificates: []*x509.Certificate{clientCert}})
+		Expect(err).To(MatchError(ErrDelegatedOCSPInvalidValidity))
+	})
+
+	It("fails when OCSP response ThisUpdate is in the future", func() {
+		responder, err := NewOCSPResponder()
+		Expect(err).NotTo(HaveOccurred())
+		futureTime := time.Now().Add(10 * time.Minute)
+		responder.ThisUpdateOverride = &futureTime
+
+		ocspAddr, ocspCleanup := startOCSPResponder(responder)
+		defer ocspCleanup()
+
+		serverProv := &ServerCertificateProvider{
+			Certificate: "testdata/pki/intermediate/server/fullchain.pem",
+		}
+		serverCfg, err := serverProv.ProvideServerTLS()
+		Expect(err).NotTo(HaveOccurred())
+
+		customizer := &MutualTLSWithOCSPCustomizer{
+			Certificate: "testdata/pki/intermediate/cacert.pem",
+			OCSPServer:  "http://" + ocspAddr,
+		}
+		err = customizer.CustomizeServerTLS(serverCfg)
+		Expect(err).NotTo(HaveOccurred())
+
+		clientCert, err := parseCertFile("testdata/pki/intermediate/client/cert.pem")
+		Expect(err).NotTo(HaveOccurred())
+
+		err = serverCfg.VerifyConnection(tls.ConnectionState{PeerCertificates: []*x509.Certificate{clientCert}})
+		Expect(err).To(MatchError(ErrOCSPThisUpdateInFuture))
+	})
+
+	It("caps OCSP cache lifetime at ThisUpdate plus maxAge when NextUpdate is later", func() {
+		responder, err := NewOCSPResponder()
+		Expect(err).NotTo(HaveOccurred())
+		farFuture := time.Now().Add(7 * 24 * time.Hour)
+		responder.NextUpdateOverride = &farFuture
+
+		ocspAddr, ocspCleanup := startOCSPResponder(responder)
+
+		serverProv := &ServerCertificateProvider{
+			Certificate: "testdata/pki/intermediate/server/fullchain.pem",
+		}
+		serverCfg, err := serverProv.ProvideServerTLS()
+		Expect(err).NotTo(HaveOccurred())
+
+		customizer := &MutualTLSWithOCSPCustomizer{
+			Certificate:    "testdata/pki/intermediate/cacert.pem",
+			OCSPServer:     "http://" + ocspAddr,
+			MaxResponseAge: 24 * time.Hour,
+		}
+		err = customizer.CustomizeServerTLS(serverCfg)
+		Expect(err).NotTo(HaveOccurred())
+
+		clientCert, err := parseCertFile("testdata/pki/intermediate/client/cert.pem")
+		Expect(err).NotTo(HaveOccurred())
+
+		// First verification succeeds and caches with expiresAt capped at ThisUpdate + 24h
+		err = serverCfg.VerifyConnection(tls.ConnectionState{PeerCertificates: []*x509.Certificate{clientCert}})
+		Expect(err).NotTo(HaveOccurred())
+
+		// Close responder so any cache miss or expired cache re-fetch fails
+		ocspCleanup()
+
+		// Advance time past the 24h cap (but still well before the 7d NextUpdate)
+		simulatedTime := time.Now().Add(25 * time.Hour)
+		restore := SetTimeNowForTest(func() time.Time {
+			return simulatedTime
+		})
+		defer restore()
+
+		// Second verification must bypass the expired cache entry and attempt network fetch, failing because responder is closed
+		err = serverCfg.VerifyConnection(tls.ConnectionState{PeerCertificates: []*x509.Certificate{clientCert}})
+		Expect(err).To(HaveOccurred())
+		Expect(err.Error()).To(ContainSubstring("mtls:"))
+	})
 })

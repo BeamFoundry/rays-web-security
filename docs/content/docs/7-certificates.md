@@ -10,7 +10,7 @@ Modern enterprise web services require robust transport layer security. While we
 - Automated certificate management via **ACME / Let's Encrypt**.
 - Mutual TLS (**mTLS**) for zero-trust service-to-service communication.
 - Certificate validation via **Certificate Revocation Lists (CRL)**, which are loaded during TLS configuration and remain in use until the server reloads the TLS configuration with an updated CRL.
-- Real-time certificate validation via **Online Certificate Status Protocol (OCSP)**.
+- Freshness-checked certificate validation via **Online Certificate Status Protocol (OCSP)**.
 - Unified, framework-agnostic `*tls.Config` generation.
 
 The `pkg/certs` package provides modular, composable TLS providers and customizers built on Go's standard `crypto/tls` library and powered by `go-resty/resty` for network fetches.
@@ -281,7 +281,7 @@ func createSecureClient() (*resty.Client, error) {
 
 ## 🧩 Complete Server Example: ACME + mTLS + OCSP
 
-Here is a full production example configuring an HTTPS server on port 443 with automated Let's Encrypt certificates, mandatory client certificate verification, and real-time OCSP validation:
+Here is a full production example configuring an HTTPS server on port 443 with automated Let's Encrypt certificates, mandatory client certificate verification, and freshness-checked OCSP validation (which depends on the client CA advertising a usable responder because `OCSPServer` is empty):
 
 ```go
 package main
@@ -312,7 +312,7 @@ func main() {
         Certificate: "/etc/ssl/certs/client-ca.crt",
     }
 
-    // 3. OCSP Customizer
+    // 3. OCSP Customizer (with OCSPServer omitted, OCSP validation depends on the client CA advertising a usable responder via AIA discovery)
     ocsp := certs.MutualTLSWithOCSPCustomizer{
         Certificate: "/etc/ssl/certs/client-ca.crt",
         Timeout:     3 * time.Second,
