@@ -1,12 +1,10 @@
 package certs_test
 
 import (
-	"context"
 	"crypto/tls"
 	"crypto/x509"
 	"errors"
 	"math/big"
-	"net"
 	"net/http"
 	"net/http/httptest"
 	"time"
@@ -89,22 +87,11 @@ var _ = Describe("MutualTLSWithOCSPCustomizer", func() {
 	})
 
 	It("falls back to OCSPServer in CA certificate when OCSPServer is empty", func() {
-		responder, err := NewOCSPResponder()
-		Expect(err).NotTo(HaveOccurred())
-
-		listener, listenErr := (&net.ListenConfig{}).Listen(context.Background(), "tcp", "127.0.0.1:3002")
-		Expect(listenErr).NotTo(HaveOccurred())
-
-		ts := httptest.NewUnstartedServer(responder)
-		ts.Listener = listener
-		ts.Start()
-		defer ts.Close()
-
 		customizer := &MutualTLSWithOCSPCustomizer{
 			Certificate: "testdata/pki/intermediate/cacert.pem",
 		}
 		cfg := &tls.Config{MinVersion: tls.VersionTLS12}
-		err = customizer.CustomizeServerTLS(cfg)
+		err := customizer.CustomizeServerTLS(cfg)
 		Expect(err).NotTo(HaveOccurred())
 		Expect(cfg.VerifyConnection).NotTo(BeNil())
 	})

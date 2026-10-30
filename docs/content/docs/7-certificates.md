@@ -158,7 +158,7 @@ func createMTLSServer() (*tls.Config, error) {
 
 ## 📜 Certificate Revocation List (CRL) Verification
 
-To prevent revoked client certificates from authenticating, chain `MutualTLSWithCRLCustomizer`. The client CA certificate must be configured in `Certificate` so the customizer can verify the CRL signature and install its `VerifyConnection` callback:
+To prevent revoked client certificates from authenticating, chain `MutualTLSWithCRLCustomizer`. The client CA certificate must be configured in `Certificate` so the customizer can verify the CRL signature and install its `VerifyConnection` callback. Revocation checks compare the client certificate serial number only against the configured CA’s CRL. Operators should configure the direct issuing CA and restrict subordinate issuers, or use chain-aware revocation checks, so revoked certificates issued through intermediates are not mistakenly treated as unrevoked:
 
 ```go
 package main
@@ -187,10 +187,10 @@ func createServerWithCRL() (*tls.Config, error) {
 ```
 
 > [!WARNING]
-> When `RevocationList` is left empty, the customizer attempts to auto-discover CRL endpoints from the client CA certificate's `CRLDistributionPoints`. If discovery finds no usable list or all fetch attempts fail, `CustomizeServerTLS` returns `ErrNoUsableCRL` (which `ConfigureServerTLS` propagates) rather than succeeding without a revocation callback. Operators should configure a usable `RevocationList` or ensure the CA advertises a fetchable CRL endpoint.
+> While `MutualTLSWithCRLCustomizer` attempts to discover CRL endpoints from the client CA certificate's `CRLDistributionPoints` when `RevocationList` is empty, a CA certificate's distribution points typically publish revocation lists for the CA itself rather than client certificates issued by it. Consequently, auto-discovery cannot be relied upon as a source for client revocation lists. For intermediate CAs, operators should explicitly configure a `RevocationList` issued by the client CA. If CRL discovery finds no usable list or all fetch attempts fail, `CustomizeServerTLS` returns `ErrNoUsableCRL` (which `ConfigureServerTLS` propagates) rather than succeeding without a revocation callback.
 
 ### CRL Features:
-* **Multiple Sources:** Supports local file paths, inline PEM strings, remote `http://` or `https://` URLs, and fallback to the issuer certificate's `CRLDistributionPoints` extension.
+* **Multiple Sources:** Supports local file paths, inline PEM strings, remote `http://` or `https://` URLs, and fallback to the certificate's `CRLDistributionPoints` extension.
 * **PEM Encoding Required:** Both local and remote CRLs must be PEM-encoded (containing a `-----BEGIN X509 CRL-----` block). Raw binary DER-encoded CRLs are not supported.
 * **HTTPS Support:** When fetching CRL over HTTPS, provide a `TLSProvider` to supply client certificates or custom root CAs for the fetch request.
 * **Validation on Connection:** Runs inside `VerifyConnection`, ensuring revocation checks occur on both full handshakes and resumed TLS sessions.
