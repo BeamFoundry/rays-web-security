@@ -175,4 +175,19 @@ var _ = Describe("Argon2PasswordEncoder", func() {
 			Expect(enc.Matches([]byte("wrong"), encoded)).To(BeFalse())
 		}
 	})
+
+	It("validates memory in Encode: rejects memory exceeding Argon2MaxMemoryKiB and preserves default on zero", func() {
+		// Memory exceeding Argon2MaxMemoryKiB
+		encTooMuchMem := Argon2PasswordEncoder{}.New(1, Argon2MaxMemoryKiB+1, 1, 32, 16)
+		_, err := encTooMuchMem.Encode([]byte("password"))
+		Expect(err).To(HaveOccurred())
+		Expect(err.Error()).To(ContainSubstring("exceeds maximum allowed"))
+
+		// Zero memory preserves Argon2DefaultMemory
+		encZeroMem := Argon2PasswordEncoder{}.New(1, 0, 1, 32, 16)
+		encoded, err := encZeroMem.Encode([]byte("password"))
+		Expect(err).NotTo(HaveOccurred())
+		Expect(string(encoded)).To(ContainSubstring(fmt.Sprintf("m=%d", Argon2DefaultMemory)))
+		Expect(encZeroMem.Matches([]byte("password"), encoded)).To(BeTrue())
+	})
 })

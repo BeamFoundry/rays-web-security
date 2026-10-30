@@ -76,6 +76,9 @@ func (this *Argon2PasswordEncoder) Encode(password []byte) ([]byte, error) {
 	if memory == 0 {
 		memory = Argon2DefaultMemory
 	}
+	if memory > Argon2MaxMemoryKiB {
+		return []byte(""), fmt.Errorf("memory %d KiB exceeds maximum allowed %d KiB", memory, Argon2MaxMemoryKiB)
+	}
 	parallelism := this.parallelism
 	if parallelism == 0 {
 		parallelism = Argon2DefaultParallelism
