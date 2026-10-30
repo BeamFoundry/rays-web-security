@@ -75,6 +75,12 @@ var _ = Describe("SCryptPasswordEncoder", func() {
 		_, err = excessiveParallelEncoder.Encode([]byte("test"))
 		Expect(err).To(HaveOccurred())
 		Expect(err.Error()).To(ContainSubstring("exceed maximum bounds"))
+
+		// Reject combined cpuCost * memoryCost above SCryptMaxNr
+		excessiveNrEncoder := SCryptPasswordEncoder{}.New(65536, 32, 1, 32, 16)
+		_, err = excessiveNrEncoder.Encode([]byte("test"))
+		Expect(err).To(HaveOccurred())
+		Expect(err.Error()).To(ContainSubstring("exceed maximum bounds"))
 	})
 
 	It("handles malformed hashes gracefully", func() {
@@ -101,6 +107,9 @@ var _ = Describe("SCryptPasswordEncoder", func() {
 
 		// p > SCryptMaxParallelism (p = 100): (14 << 16) | (8 << 8) | 100 = 0x0e0864
 		Expect(encoder.Matches([]byte("test"), []byte("$e0864$c2FsdHNhbHQ=$aGFzaGhhc2g="))).To(BeFalse())
+
+		// cpuCost * memoryCost > SCryptMaxNr (N = 65536, r = 32): (16 << 16) | (32 << 8) | 1 = 0x102001
+		Expect(encoder.Matches([]byte("test"), []byte("$102001$c2FsdHNhbHQ=$aGFzaGhhc2g="))).To(BeFalse())
 	})
 
 	It("matches and enforces parameter bounds on PHC format scrypt hashes", func() {
@@ -147,6 +156,9 @@ var _ = Describe("SCryptPasswordEncoder", func() {
 		// Non-power of two N or excessive N
 		Expect(encoder.Matches(password, []byte("$scrypt$N=1000,r=8,p=1$c2FsdHNhbHQ=$aGFzaGhhc2g="))).To(BeFalse())
 		Expect(encoder.Matches(password, []byte("$scrypt$N=4194304,r=8,p=1$c2FsdHNhbHQ=$aGFzaGhhc2g="))).To(BeFalse())
+
+		// cpuCost * memoryCost > SCryptMaxNr in PHC (N = 65536, r = 32)
+		Expect(encoder.Matches(password, []byte("$scrypt$ln=16,r=32,p=1$c2FsdHNhbHQ=$aGFzaGhhc2g="))).To(BeFalse())
 
 		// Empty or invalid base64 salt or derived
 		Expect(encoder.Matches(password, []byte("$scrypt$ln=10,r=8,p=1$$aGFzaGhhc2g="))).To(BeFalse())

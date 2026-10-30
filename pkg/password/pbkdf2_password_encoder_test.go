@@ -7,6 +7,7 @@ import (
 	"encoding/base64"
 	"encoding/hex"
 	"fmt"
+	"strings"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -158,6 +159,13 @@ var _ = Describe("Pbkdf2PasswordEncoder", func() {
 		Expect(encoder.Matches(password, []byte("pbkdf2_sha256$1000$$YWJj"))).To(BeFalse())
 		Expect(encoder.Matches(password, []byte("pbkdf2_sha256$1000$salt$"))).To(BeFalse())
 		Expect(encoder.Matches(password, []byte("pbkdf2_sha256$1000$salt$!invalid-base64!"))).To(BeFalse())
+
+		// Salt exceeding Pbkdf2MaxSaltLength
+		Expect(encoder.Matches([]byte("test"), []byte("pbkdf2_sha256$1000$"+strings.Repeat("s", Pbkdf2MaxSaltLength+1)+"$YWJj"))).To(BeFalse())
+
+		// Hash exceeding Pbkdf2MaxHashLength
+		hugeHashB64 := base64.StdEncoding.EncodeToString([]byte(strings.Repeat("h", Pbkdf2MaxHashLength+1)))
+		Expect(encoder.Matches([]byte("test"), []byte("pbkdf2_sha256$1000$salt$"+hugeHashB64))).To(BeFalse())
 	})
 
 	It("matches and validates PHC format PBKDF2 hashes", func() {
@@ -221,5 +229,17 @@ var _ = Describe("Pbkdf2PasswordEncoder", func() {
 		// Short decoded slice (len(digested) <= saltLength)
 		shortHex := hex.EncodeToString([]byte("short"))
 		Expect(encoder.Matches(password, []byte(shortHex))).To(BeFalse())
+
+		// Salt exceeding Pbkdf2MaxSaltLength in PHC
+		hugeSaltB64 := base64.StdEncoding.EncodeToString([]byte(strings.Repeat("s", Pbkdf2MaxSaltLength+1)))
+		Expect(encoder.Matches(password, []byte("$pbkdf2-sha256$i=1000$"+hugeSaltB64+"$YWJj"))).To(BeFalse())
+
+		// Hash exceeding Pbkdf2MaxHashLength in PHC
+		hugePHCHashB64 := base64.StdEncoding.EncodeToString([]byte(strings.Repeat("h", Pbkdf2MaxHashLength+1)))
+		Expect(encoder.Matches(password, []byte("$pbkdf2-sha256$i=1000$c2FsdDEyMzQ=$"+hugePHCHashB64))).To(BeFalse())
+
+		// Spring format with expectedHash > Pbkdf2MaxHashLength
+		hugeCandidate := make([]byte, 16+Pbkdf2MaxHashLength+1)
+		Expect(encoder.Matches(password, []byte(hex.EncodeToString(hugeCandidate)))).To(BeFalse())
 	})
 })

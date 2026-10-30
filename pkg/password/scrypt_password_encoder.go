@@ -23,6 +23,7 @@ const (
 	SCryptMaxLn              = 20
 	SCryptMaxMemoryCost      = 64
 	SCryptMaxParallelism     = 64
+	SCryptMaxNr              = 1 << 20 // 1048576
 )
 
 // SCryptPasswordEncoder implements [core.PasswordEncoder] using the SCrypt key derivation function.
@@ -84,7 +85,7 @@ func (this *SCryptPasswordEncoder) Encode(password []byte) ([]byte, error) {
 		saltLength = SCryptDefaultSaltLength
 	}
 
-	if cpuCost > SCryptMaxCpuCost || memoryCost > SCryptMaxMemoryCost || parallelism > SCryptMaxParallelism {
+	if cpuCost > SCryptMaxCpuCost || memoryCost > SCryptMaxMemoryCost || parallelism > SCryptMaxParallelism || cpuCost > SCryptMaxNr/memoryCost {
 		return []byte(""), fmt.Errorf("scrypt parameters exceed maximum bounds (cpuCost: %d, memoryCost: %d, parallelism: %d)", cpuCost, memoryCost, parallelism)
 	}
 
@@ -135,7 +136,7 @@ func (this *SCryptPasswordEncoder) Matches(password, encoded []byte) bool {
 		memoryCost := int((params >> 8) & 0xff)
 		parallelism := int(params & 0xff)
 
-		if cpuCost <= 1 || cpuCost > SCryptMaxCpuCost || memoryCost < 1 || memoryCost > SCryptMaxMemoryCost || parallelism < 1 || parallelism > SCryptMaxParallelism {
+		if cpuCost <= 1 || cpuCost > SCryptMaxCpuCost || memoryCost < 1 || memoryCost > SCryptMaxMemoryCost || parallelism < 1 || parallelism > SCryptMaxParallelism || cpuCost > SCryptMaxNr/memoryCost {
 			return false
 		}
 
@@ -181,7 +182,7 @@ func (this *SCryptPasswordEncoder) Matches(password, encoded []byte) bool {
 				// Ignore unrecognized parameters
 			}
 		}
-		if cpuCost <= 1 || cpuCost > SCryptMaxCpuCost || memoryCost < 1 || memoryCost > SCryptMaxMemoryCost || parallelism < 1 || parallelism > SCryptMaxParallelism {
+		if cpuCost <= 1 || cpuCost > SCryptMaxCpuCost || memoryCost < 1 || memoryCost > SCryptMaxMemoryCost || parallelism < 1 || parallelism > SCryptMaxParallelism || cpuCost > SCryptMaxNr/memoryCost {
 			return false
 		}
 

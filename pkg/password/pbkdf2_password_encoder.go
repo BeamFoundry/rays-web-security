@@ -24,6 +24,8 @@ const (
 	Pbkdf2DefaultKeyLength  = 32 // 256 bits
 	Pbkdf2DefaultAlgorithm  = "PBKDF2WithHmacSHA256"
 	Pbkdf2MaxIterations     = 5000000
+	Pbkdf2MaxSaltLength     = 128
+	Pbkdf2MaxHashLength     = 64
 )
 
 // Pbkdf2PasswordEncoder implements [core.PasswordEncoder] using the PBKDF2 key derivation function.
@@ -182,11 +184,11 @@ func (this *Pbkdf2PasswordEncoder) Matches(password, encoded []byte) bool {
 				return false
 			}
 			salt := []byte(parts[2])
-			if len(salt) == 0 {
+			if len(salt) == 0 || len(salt) > Pbkdf2MaxSaltLength {
 				return false
 			}
 			expectedHash, decodeErr := decodeBase64(parts[3])
-			if decodeErr != nil || len(expectedHash) == 0 {
+			if decodeErr != nil || len(expectedHash) == 0 || len(expectedHash) > Pbkdf2MaxHashLength {
 				return false
 			}
 			saltAndSecret := append([]byte(nil), salt...)
@@ -229,11 +231,11 @@ func (this *Pbkdf2PasswordEncoder) Matches(password, encoded []byte) bool {
 				return false
 			}
 			salt, saltErr := decodeBase64(parts[3])
-			if saltErr != nil || len(salt) == 0 {
+			if saltErr != nil || len(salt) == 0 || len(salt) > Pbkdf2MaxSaltLength {
 				return false
 			}
 			expectedHash, hashErr := decodeBase64(parts[4])
-			if hashErr != nil || len(expectedHash) == 0 {
+			if hashErr != nil || len(expectedHash) == 0 || len(expectedHash) > Pbkdf2MaxHashLength {
 				return false
 			}
 			saltAndSecret := append([]byte(nil), salt...)
@@ -257,6 +259,10 @@ func (this *Pbkdf2PasswordEncoder) Matches(password, encoded []byte) bool {
 
 		salt := candidate[:saltLength]
 		expectedHash := candidate[saltLength:]
+
+		if len(salt) > Pbkdf2MaxSaltLength || len(expectedHash) > Pbkdf2MaxHashLength {
+			return false
+		}
 
 		saltAndSecret := append([]byte(nil), salt...)
 		if len(this.secret) > 0 {
