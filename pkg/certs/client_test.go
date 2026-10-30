@@ -38,6 +38,16 @@ var _ = Describe("ClientCertificateProvider", func() {
 		Expect(cfg13.MinVersion).To(Equal(uint16(tls.VersionTLS13)))
 	})
 
+	It("rejects unsupported TLSMinVersion", func() {
+		provider := &ClientCertificateProvider{
+			RootCertificates: "testdata/pki/cacert.pem",
+			TLSMinVersion:    tls.VersionTLS10,
+		}
+		cfg, err := provider.ProvideClientTLS()
+		Expect(err).To(MatchError(ErrUnsupportedTLSVersion))
+		Expect(cfg).To(BeNil())
+	})
+
 	It("returns error when RootCertificates file does not exist", func() {
 		provider := &ClientCertificateProvider{
 			RootCertificates: "does-not-exist.pem",

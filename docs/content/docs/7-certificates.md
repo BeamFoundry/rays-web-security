@@ -76,7 +76,6 @@ package main
 
 import (
     "crypto/tls"
-    "log"
 
     "github.com/BeamFoundry/rays-web-security/pkg/certs"
 )
@@ -188,7 +187,7 @@ func createServerWithCRL() (*tls.Config, error) {
 ```
 
 > [!WARNING]
-> When `RevocationList` is left empty, the customizer attempts to auto-discover CRL endpoints from the client CA certificate's `CRLDistributionPoints`. If discovery finds no usable list or if all fetch attempts fail, configuration succeeds without installing a revocation callback, and revoked certificates may pass standard chain verification. For deployments requiring strict revocation guarantees, explicitly configure `RevocationList`.
+> When `RevocationList` is left empty, the customizer attempts to auto-discover CRL endpoints from the client CA certificate's `CRLDistributionPoints`. If discovery finds no usable list or if all fetch attempts fail, the customizer returns `ErrNoUsableCRL` and configuration fails. For deployments requiring strict revocation guarantees, explicitly configure `RevocationList`.
 
 ### CRL Features:
 * **Multiple Sources:** Supports local file paths, inline PEM strings, remote `http://` or `https://` URLs, and fallback to the issuer certificate's `CRLDistributionPoints` extension.
@@ -319,7 +318,10 @@ func main() {
     // 3. OCSP Customizer (with OCSPServer omitted, OCSP validation depends on the client CA advertising a usable responder via AIA discovery)
     ocsp := certs.MutualTLSWithOCSPCustomizer{
         Certificate: "/etc/ssl/certs/client-ca.crt",
-        Timeout:     3 * time.Second,
+        TLSProvider: &certs.ClientCertificateProvider{
+            IncludeSystemCertificates: true,
+        },
+        Timeout: 3 * time.Second,
     }
 
     // 4. Assemble *tls.Config using pointers

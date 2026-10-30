@@ -55,6 +55,10 @@ func (p *ClientCertificateProvider) ProvideClientTLS() (*tls.Config, Error) {
 		minVersion = tls.VersionTLS12
 	}
 
+	if minVersion != tls.VersionTLS12 && minVersion != tls.VersionTLS13 {
+		return nil, ErrUnsupportedTLSVersion
+	}
+
 	tlsConfig := &tls.Config{
 		MinVersion: minVersion,
 	}
