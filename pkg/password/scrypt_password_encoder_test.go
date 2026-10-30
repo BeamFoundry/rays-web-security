@@ -109,7 +109,8 @@ var _ = Describe("SCryptPasswordEncoder", func() {
 		Expect(encoder.Matches([]byte("test"), []byte("$e0864$c2FsdHNhbHQ=$aGFzaGhhc2g="))).To(BeFalse())
 
 		// cpuCost * memoryCost > SCryptMaxNr (N = 65536, r = 32): (16 << 16) | (32 << 8) | 1 = 0x102001
-		Expect(encoder.Matches([]byte("test"), []byte("$102001$c2FsdHNhbHQ=$aGFzaGhhc2g="))).To(BeFalse())
+		// Uses precomputed hash that correctly derives from "test" at rejected cost (N=65536, r=32, p=1)
+		Expect(encoder.Matches([]byte("test"), []byte("$102001$c2FsdHNhbHRzYWx0MTIzNA==$aB8HEEEEsEnWi0W32z89XcEPZ/jDTMZlktmbzKofm/0="))).To(BeFalse())
 	})
 
 	It("matches and enforces parameter bounds on PHC format scrypt hashes", func() {
@@ -158,7 +159,9 @@ var _ = Describe("SCryptPasswordEncoder", func() {
 		Expect(encoder.Matches(password, []byte("$scrypt$N=4194304,r=8,p=1$c2FsdHNhbHQ=$aGFzaGhhc2g="))).To(BeFalse())
 
 		// cpuCost * memoryCost > SCryptMaxNr in PHC (N = 65536, r = 32)
-		Expect(encoder.Matches(password, []byte("$scrypt$ln=16,r=32,p=1$c2FsdHNhbHQ=$aGFzaGhhc2g="))).To(BeFalse())
+		// Uses precomputed hash that correctly derives from password ("phc-test") at rejected cost (N=65536, r=32, p=1)
+		Expect(encoder.Matches(password, []byte("$scrypt$ln=16,r=32,p=1$c2FsdHNhbHRzYWx0MTIzNA==$xl+vnKBjqTrnUbdGvFG0y/USR2MIhNnGe4X2pms37VQ="))).To(BeFalse())
+		Expect(encoder.Matches(password, []byte("$scrypt$N=65536,r=32,p=1$c2FsdHNhbHRzYWx0MTIzNA==$xl+vnKBjqTrnUbdGvFG0y/USR2MIhNnGe4X2pms37VQ="))).To(BeFalse())
 
 		// Empty or invalid base64 salt or derived
 		Expect(encoder.Matches(password, []byte("$scrypt$ln=10,r=8,p=1$$aGFzaGhhc2g="))).To(BeFalse())

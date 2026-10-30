@@ -104,6 +104,9 @@ func (this *Pbkdf2PasswordEncoder) Encode(password []byte) ([]byte, error) {
 	if saltLength <= 0 {
 		saltLength = Pbkdf2DefaultSaltLength
 	}
+	if saltLength > Pbkdf2MaxSaltLength {
+		return []byte(""), fmt.Errorf("saltLength %d exceeds maximum allowed %d", saltLength, Pbkdf2MaxSaltLength)
+	}
 	iterations := this.iterations
 	if iterations <= 0 {
 		iterations = Pbkdf2DefaultIterations
@@ -114,6 +117,9 @@ func (this *Pbkdf2PasswordEncoder) Encode(password []byte) ([]byte, error) {
 	keyLength := this.keyLength
 	if keyLength <= 0 {
 		keyLength = Pbkdf2DefaultKeyLength
+	}
+	if keyLength > Pbkdf2MaxHashLength {
+		return []byte(""), fmt.Errorf("keyLength %d exceeds maximum allowed %d", keyLength, Pbkdf2MaxHashLength)
 	}
 
 	salt := make([]byte, saltLength)

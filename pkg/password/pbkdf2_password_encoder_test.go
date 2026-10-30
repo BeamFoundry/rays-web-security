@@ -77,6 +77,34 @@ var _ = Describe("Pbkdf2PasswordEncoder", func() {
 		// Excessive iterations in Matches
 		Expect(tooManyIterEnc.Matches(password, encoded)).To(BeFalse())
 
+		// Reject saltLength exceeding Pbkdf2MaxSaltLength in Encode
+		encExcessiveSalt := Pbkdf2PasswordEncoder{}.New("", Pbkdf2MaxSaltLength+1, 1000, 32, "PBKDF2WithHmacSHA256")
+		_, err = encExcessiveSalt.Encode(password)
+		Expect(err).To(HaveOccurred())
+		Expect(err.Error()).To(ContainSubstring("saltLength"))
+
+		// Reject keyLength exceeding Pbkdf2MaxHashLength in Encode
+		encExcessiveKey := Pbkdf2PasswordEncoder{}.New("", 16, 1000, Pbkdf2MaxHashLength+1, "PBKDF2WithHmacSHA256")
+		_, err = encExcessiveKey.Encode(password)
+		Expect(err).To(HaveOccurred())
+		Expect(err.Error()).To(ContainSubstring("keyLength"))
+
+		// Round-trip tests covering boundary limits (Pbkdf2MaxSaltLength and Pbkdf2MaxHashLength)
+		encBoundarySalt := Pbkdf2PasswordEncoder{}.New("", Pbkdf2MaxSaltLength, 1000, 32, "PBKDF2WithHmacSHA256")
+		encodedBoundarySalt, err := encBoundarySalt.Encode(password)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(encBoundarySalt.Matches(password, encodedBoundarySalt)).To(BeTrue())
+
+		encBoundaryKey := Pbkdf2PasswordEncoder{}.New("", 16, 1000, Pbkdf2MaxHashLength, "PBKDF2WithHmacSHA512")
+		encodedBoundaryKey, err := encBoundaryKey.Encode(password)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(encBoundaryKey.Matches(password, encodedBoundaryKey)).To(BeTrue())
+
+		encBoundaryBoth := Pbkdf2PasswordEncoder{}.New("", Pbkdf2MaxSaltLength, 1000, Pbkdf2MaxHashLength, "PBKDF2WithHmacSHA512")
+		encodedBoundaryBoth, err := encBoundaryBoth.Encode(password)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(encBoundaryBoth.Matches(password, encodedBoundaryBoth)).To(BeTrue())
+
 		// Rand reader error
 		restore := SetRandReaderForTest(errReader{})
 		defer restore()
