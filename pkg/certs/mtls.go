@@ -70,5 +70,9 @@ func (c *MutualTLSCustomizer) ClientCertificate() (*x509.Certificate, Error) {
 		return nil, NewWrappedError("tls", fmt.Errorf("cannot load client CA certificate: %w", err))
 	}
 
+	if !cert.IsCA {
+		return nil, ErrCertificateNotCA
+	}
+
 	return cert, nil
 }

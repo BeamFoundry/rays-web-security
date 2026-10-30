@@ -115,6 +115,15 @@ var _ = Describe("MutualTLSCustomizer", func() {
 		Expect(err).To(HaveOccurred())
 	})
 
+	It("returns error when certificate is not a CA", func() {
+		customizer := &MutualTLSCustomizer{
+			Certificate: "testdata/pki/intermediate/client/cert.pem",
+		}
+		cert, err := customizer.ClientCertificate()
+		Expect(err).To(MatchError(ErrCertificateNotCA))
+		Expect(cert).To(BeNil())
+	})
+
 	It("enforces mTLS with authorized, expired, and missing certificates", func() {
 		serverProv := &ServerCertificateProvider{
 			Certificate: "testdata/pki/intermediate/server/fullchain.pem",

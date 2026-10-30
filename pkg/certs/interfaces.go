@@ -42,6 +42,9 @@ var (
 	// ErrNoCertificatePEMBlock is returned when no PEM CERTIFICATE block is found in the certificate string or file.
 	ErrNoCertificatePEMBlock Error = NewError("tls", "no PEM certificate block found in configured certificate")
 
+	// ErrCertificateNotCA is returned when the configured certificate is not a CA certificate.
+	ErrCertificateNotCA Error = NewError("tls", "certificate is not a CA certificate")
+
 	// ErrIncompleteCertKeyFile is returned when exactly one of CertFile and CertKeyFile is configured.
 	ErrIncompleteCertKeyFile Error = NewError("tls", "both CertFile and CertKeyFile must be provided")
 

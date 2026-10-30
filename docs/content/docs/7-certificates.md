@@ -187,7 +187,7 @@ func createServerWithCRL() (*tls.Config, error) {
 ```
 
 > [!WARNING]
-> When `RevocationList` is left empty, the customizer attempts to auto-discover CRL endpoints from the client CA certificate's `CRLDistributionPoints`. If discovery finds no usable list or if all fetch attempts fail, the customizer returns `ErrNoUsableCRL` and configuration fails. For deployments requiring strict revocation guarantees, explicitly configure `RevocationList`.
+> When `RevocationList` is left empty, the customizer attempts to auto-discover CRL endpoints from the client CA certificate's `CRLDistributionPoints`. If discovery finds no usable list or all fetch attempts fail, `CustomizeServerTLS` returns `ErrNoUsableCRL` (which `ConfigureServerTLS` propagates) rather than succeeding without a revocation callback. Operators should configure a usable `RevocationList` or ensure the CA advertises a fetchable CRL endpoint.
 
 ### CRL Features:
 * **Multiple Sources:** Supports local file paths, inline PEM strings, remote `http://` or `https://` URLs, and fallback to the issuer certificate's `CRLDistributionPoints` extension.
@@ -231,9 +231,10 @@ func createServerWithOCSP() (*tls.Config, error) {
 > When `OCSPServer` is left empty, the customizer attempts to discover the responder from the certificate's Authority Information Access (`OCSPServer`) extension. If no responder is found, configuration succeeds without installing an OCSP verification callback. Explicitly specify `OCSPServer` when OCSP validation is mandatory.
 
 ### OCSP Features:
-* **Delegated Responder Validation:** Delegated OCSP responder certificates must be signed by the CA and include the `OCSPSigning` extended key usage.
-* **Freshness & Expiry Checks:** Rejects responses whose `ThisUpdate` exceeds `MaxResponseAge` (default 24h). When `NextUpdate` is absent, treats the response validity as expiring at `ThisUpdate + MaxResponseAge`.
-* **In-Memory Response Caching:** Caches validated OCSP responses keyed by certificate serial number until `NextUpdate` expires, minimizing network round-trips while preserving fail-closed behavior on responder errors.
+* **Delegated Responder Validation:** Delegated OCSP responder certificates must be signed by the CA, currently valid within their validity period, and include the `OCSPSigning` extended key usage.
+* **Freshness & Expiry Checks:** Rejects responses whose `ThisUpdate` is in the future or exceeds `MaxResponseAge` (default 24h).
+* **In-Memory Response Caching:** Caches validated OCSP responses keyed by certificate serial number. Cached responses expire at the earlier of `NextUpdate` and `ThisUpdate + MaxResponseAge` (using the latter when `NextUpdate` is absent).
+* **HTTPS Support:** Connecting to an HTTPS `OCSPServer` requires configuring a `TLSProvider` on the customizer.
 * **Resumption Protection:** Runs inside `VerifyConnection` to validate peer certificates on new and resumed TLS sessions alike.
 
 ---
