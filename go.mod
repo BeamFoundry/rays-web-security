@@ -5,6 +5,7 @@ go 1.27
 require (
 	github.com/BeamFoundry/rays v0.2.2
 	github.com/go-playground/validator/v10 v10.30.5
+	github.com/go-resty/resty/v2 v2.17.2
 	github.com/onsi/ginkgo/v2 v2.33.1
 	github.com/onsi/gomega v1.44.0
 	github.com/timandy/routine v1.1.6
