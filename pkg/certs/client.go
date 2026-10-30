@@ -46,10 +46,6 @@ var _ ClientTLSProvider = &ClientCertificateProvider{}
 
 // ProvideClientTLS implements [ClientTLSProvider].
 func (p *ClientCertificateProvider) ProvideClientTLS() (*tls.Config, Error) {
-	if p.Certificate == "" && p.RootCertificates == "" && !p.IncludeSystemCertificates {
-		return nil, nil //nolint:nilnil // Returning nil config without error when provider is unconfigured is intentional
-	}
-
 	minVersion := p.TLSMinVersion
 	if minVersion == 0 {
 		minVersion = tls.VersionTLS12
@@ -57,6 +53,10 @@ func (p *ClientCertificateProvider) ProvideClientTLS() (*tls.Config, Error) {
 
 	if minVersion != tls.VersionTLS12 && minVersion != tls.VersionTLS13 {
 		return nil, ErrUnsupportedTLSVersion
+	}
+
+	if p.Certificate == "" && p.RootCertificates == "" && !p.IncludeSystemCertificates {
+		return nil, nil //nolint:nilnil // Returning nil config without error when provider is unconfigured is intentional
 	}
 
 	tlsConfig := &tls.Config{
