@@ -24,9 +24,7 @@ func (this *DefaultConfiguration) PasswordEncoder(
 		ConditionalOnMissingBeam
 	},
 ) PasswordEncoder {
-	return DelegatingPasswordEncoder{}.New(
-		"bcrypt", map[string]PasswordEncoder{"bcrypt": BCryptPasswordEncoder{}.New(10)},
-	)
+	return DelegatingPasswordEncoder{}.NewDefault()
 }
 
 func (this *DefaultConfiguration) UserDetailsAuthenticationProvider(
