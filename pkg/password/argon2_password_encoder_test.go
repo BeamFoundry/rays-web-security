@@ -60,7 +60,7 @@ var _ = Describe("Argon2PasswordEncoder", func() {
 		Expect(err).To(HaveOccurred())
 	})
 
-	It("matches valid argon2i hashes and argon2id without v= tag", func() {
+	It("matches argon2i format and rejects malformed hashes", func() {
 		encoder := Argon2PasswordEncoder{}.NewDefault()
 
 		// Generate a valid argon2i hash
@@ -80,6 +80,15 @@ var _ = Describe("Argon2PasswordEncoder", func() {
 			base64.RawStdEncoding.EncodeToString(salt),
 			base64.RawStdEncoding.EncodeToString(derivedID))
 		Expect(encoder.Matches(password, []byte(hashNoVersion))).To(BeTrue())
+
+		// Malformed-hash cases for p=0, t=0, p=256, and an empty hash segment that must return false without panicking
+		b64Salt := base64.RawStdEncoding.EncodeToString(salt)
+		b64Hash := base64.RawStdEncoding.EncodeToString(derived)
+
+		Expect(encoder.Matches(password, []byte(fmt.Sprintf("$argon2i$v=19$m=4096,t=1,p=0$%s$%s", b64Salt, b64Hash)))).To(BeFalse())
+		Expect(encoder.Matches(password, []byte(fmt.Sprintf("$argon2i$v=19$m=4096,t=0,p=1$%s$%s", b64Salt, b64Hash)))).To(BeFalse())
+		Expect(encoder.Matches(password, []byte(fmt.Sprintf("$argon2i$v=19$m=4096,t=1,p=256$%s$%s", b64Salt, b64Hash)))).To(BeFalse())
+		Expect(encoder.Matches(password, []byte(fmt.Sprintf("$argon2i$v=19$m=4096,t=1,p=1$%s$", b64Salt)))).To(BeFalse())
 	})
 
 	It("rejects argon2d and unsupported algorithms", func() {
@@ -104,6 +113,9 @@ var _ = Describe("Argon2PasswordEncoder", func() {
 
 		// Zero iterations (t=0)
 		Expect(encoder.Matches([]byte("test"), []byte("$argon2id$v=19$m=4096,t=0,p=1$c2FsdHNhbHRzYWx0MTIzNA$e8n2y8GZ5N9u3P3Fk8H0uN3L9W8K2P5Y8J7N6B4V1M8"))).To(BeFalse())
+
+		// Iterations > Argon2MaxIterations
+		Expect(encoder.Matches([]byte("test"), []byte(fmt.Sprintf("$argon2id$v=19$m=4096,t=%d,p=1$c2FsdHNhbHRzYWx0MTIzNA$e8n2y8GZ5N9u3P3Fk8H0uN3L9W8K2P5Y8J7N6B4V1M8", Argon2MaxIterations+1)))).To(BeFalse())
 
 		// Zero parallelism (p=0)
 		Expect(encoder.Matches([]byte("test"), []byte("$argon2id$v=19$m=4096,t=1,p=0$c2FsdHNhbHRzYWx0MTIzNA$e8n2y8GZ5N9u3P3Fk8H0uN3L9W8K2P5Y8J7N6B4V1M8"))).To(BeFalse())
@@ -189,5 +201,12 @@ var _ = Describe("Argon2PasswordEncoder", func() {
 		Expect(err).NotTo(HaveOccurred())
 		Expect(string(encoded)).To(ContainSubstring(fmt.Sprintf("m=%d", Argon2DefaultMemory)))
 		Expect(encZeroMem.Matches([]byte("password"), encoded)).To(BeTrue())
+	})
+
+	It("validates iterations in Encode: rejects iterations exceeding Argon2MaxIterations", func() {
+		encTooManyIter := Argon2PasswordEncoder{}.New(Argon2MaxIterations+1, 1024, 1, 32, 16)
+		_, err := encTooManyIter.Encode([]byte("password"))
+		Expect(err).To(HaveOccurred())
+		Expect(err.Error()).To(ContainSubstring("exceeds maximum allowed"))
 	})
 })

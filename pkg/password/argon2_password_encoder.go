@@ -21,6 +21,7 @@ const (
 	Argon2MaxMemoryKiB       = 1 << 20 // 1048576 KiB (1 GiB)
 	Argon2MinHashLength      = 16
 	Argon2MaxHashLength      = 1024
+	Argon2MaxIterations      = 1000
 )
 
 // Argon2PasswordEncoder implements [core.PasswordEncoder] using the Argon2 hashing algorithm
@@ -71,6 +72,9 @@ func (this *Argon2PasswordEncoder) Encode(password []byte) ([]byte, error) {
 	iterations := this.iterations
 	if iterations == 0 {
 		iterations = Argon2DefaultIterations
+	}
+	if iterations > Argon2MaxIterations {
+		return []byte(""), fmt.Errorf("iterations %d exceeds maximum allowed %d", iterations, Argon2MaxIterations)
 	}
 	memory := this.memory
 	if memory == 0 {
@@ -148,7 +152,7 @@ func (this *Argon2PasswordEncoder) Matches(password, encoded []byte) bool {
 			memory = uint32(val)
 			hasM = true
 		case "t":
-			if val == 0 {
+			if val == 0 || val > Argon2MaxIterations {
 				return false
 			}
 			iterations = uint32(val)

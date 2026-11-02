@@ -113,7 +113,7 @@ var _ = Describe("SCryptPasswordEncoder", func() {
 		Expect(encoder.Matches([]byte("test"), []byte("$102001$c2FsdHNhbHRzYWx0MTIzNA==$aB8HEEEEsEnWi0W32z89XcEPZ/jDTMZlktmbzKofm/0="))).To(BeFalse())
 	})
 
-	It("matches and enforces parameter bounds on PHC format scrypt hashes", func() {
+	It("matches PHC format scrypt hashes", func() {
 		encoder := SCryptPasswordEncoder{}.New(1024, 8, 1, 32, 16)
 
 		// Valid PHC formatted hash with ln=10 (N=1024), r=8, p=1
@@ -168,5 +168,12 @@ var _ = Describe("SCryptPasswordEncoder", func() {
 		Expect(encoder.Matches(password, []byte("$scrypt$ln=10,r=8,p=1$!bad!$aGFzaGhhc2g="))).To(BeFalse())
 		Expect(encoder.Matches(password, []byte("$scrypt$ln=10,r=8,p=1$c2FsdHNhbHQ=$"))).To(BeFalse())
 		Expect(encoder.Matches(password, []byte("$scrypt$ln=10,r=8,p=1$c2FsdHNhbHQ=$!bad!"))).To(BeFalse())
+	})
+
+	It("verifies the panic path for ln=-1", func() {
+		encoder := SCryptPasswordEncoder{}.NewDefault()
+		Expect(func() {
+			Expect(encoder.Matches([]byte("test"), []byte("$scrypt$ln=-1,r=8,p=1$c2FsdHNhbHQ=$aGFzaGhhc2g="))).To(BeFalse())
+		}).NotTo(Panic())
 	})
 })

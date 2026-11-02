@@ -4,6 +4,7 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
+	. "github.com/BeamFoundry/rays-web-security/pkg/core"
 	. "github.com/BeamFoundry/rays-web-security/pkg/password"
 )
 
@@ -59,5 +60,19 @@ var _ = Describe("DelegatingPasswordEncoder", func() {
 
 		// Unknown ID
 		Expect(encoder.Matches(password, []byte("{unknown}somehash"))).To(BeFalse())
+	})
+
+	It("returns error when idForEncode is missing or mapped to nil", func() {
+		// Missing id
+		missingEnc := DelegatingPasswordEncoder{}.New("missing", map[string]PasswordEncoder{})
+		_, err := missingEnc.Encode([]byte("password"))
+		Expect(err).To(HaveOccurred())
+		Expect(err.Error()).To(ContainSubstring("no password encoder registered for id: missing"))
+
+		// Nil encoder
+		nilEnc := DelegatingPasswordEncoder{}.New("nilenc", map[string]PasswordEncoder{"nilenc": nil})
+		_, err = nilEnc.Encode([]byte("password"))
+		Expect(err).To(HaveOccurred())
+		Expect(err.Error()).To(ContainSubstring("no password encoder registered for id: nilenc"))
 	})
 })

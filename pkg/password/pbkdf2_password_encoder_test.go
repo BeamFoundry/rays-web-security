@@ -144,7 +144,7 @@ var _ = Describe("Pbkdf2PasswordEncoder", func() {
 		Expect(enc1.Matches(password, encoded1)).To(BeTrue())
 	})
 
-	It("matches and validates Django format PBKDF2 hashes", func() {
+	It("matches PHC and Django format PBKDF2 hashes", func() {
 		encoder := Pbkdf2PasswordEncoder{}.NewDefault()
 		password := []byte("django-password")
 		salt := "mysalt1234"
@@ -194,45 +194,43 @@ var _ = Describe("Pbkdf2PasswordEncoder", func() {
 		// Hash exceeding Pbkdf2MaxHashLength
 		hugeHashB64 := base64.StdEncoding.EncodeToString([]byte(strings.Repeat("h", Pbkdf2MaxHashLength+1)))
 		Expect(encoder.Matches([]byte("test"), []byte("pbkdf2_sha256$1000$salt$"+hugeHashB64))).To(BeFalse())
-	})
 
-	It("matches and validates PHC format PBKDF2 hashes", func() {
-		encoder := Pbkdf2PasswordEncoder{}.NewDefault()
-		password := []byte("phc-pbkdf2-pass")
-		salt := []byte("phcsalt1234")
-		b64Salt := base64.StdEncoding.EncodeToString(salt)
+		// PHC format tests
+		phcPassword := []byte("phc-pbkdf2-pass")
+		phcSalt := []byte("phcsalt1234")
+		b64PHCSalt := base64.StdEncoding.EncodeToString(phcSalt)
 
 		// Valid pbkdf2-sha256 (also test param part without '=')
-		derived256 := pbkdf2.Key(password, salt, 1000, 32, sha256.New)
-		b64Hash256 := base64.StdEncoding.EncodeToString(derived256)
-		phc256 := fmt.Sprintf("$pbkdf2-sha256$noparam,i=1000$%s$%s", b64Salt, b64Hash256)
-		Expect(encoder.Matches(password, []byte(phc256))).To(BeTrue())
+		phcDerived256 := pbkdf2.Key(phcPassword, phcSalt, 1000, 32, sha256.New)
+		b64PHCHash256 := base64.StdEncoding.EncodeToString(phcDerived256)
+		phc256 := fmt.Sprintf("$pbkdf2-sha256$noparam,i=1000$%s$%s", b64PHCSalt, b64PHCHash256)
+		Expect(encoder.Matches(phcPassword, []byte(phc256))).To(BeTrue())
 		Expect(encoder.Matches([]byte("wrong"), []byte(phc256))).To(BeFalse())
 
 		// Valid pbkdf2-sha512
-		derived512 := pbkdf2.Key(password, salt, 1000, 64, sha512.New)
-		phc512 := fmt.Sprintf("$pbkdf2-sha512$i=1000$%s$%s", b64Salt, base64.StdEncoding.EncodeToString(derived512))
-		Expect(encoder.Matches(password, []byte(phc512))).To(BeTrue())
+		phcDerived512 := pbkdf2.Key(phcPassword, phcSalt, 1000, 64, sha512.New)
+		phc512 := fmt.Sprintf("$pbkdf2-sha512$i=1000$%s$%s", b64PHCSalt, base64.StdEncoding.EncodeToString(phcDerived512))
+		Expect(encoder.Matches(phcPassword, []byte(phc512))).To(BeTrue())
 
 		// Valid pbkdf2-sha1
-		derived1 := pbkdf2.Key(password, salt, 1000, 20, sha1.New)
-		phc1 := fmt.Sprintf("$pbkdf2-sha1$i=1000$%s$%s", b64Salt, base64.StdEncoding.EncodeToString(derived1))
-		Expect(encoder.Matches(password, []byte(phc1))).To(BeTrue())
+		phcDerived1 := pbkdf2.Key(phcPassword, phcSalt, 1000, 20, sha1.New)
+		phc1 := fmt.Sprintf("$pbkdf2-sha1$i=1000$%s$%s", b64PHCSalt, base64.StdEncoding.EncodeToString(phcDerived1))
+		Expect(encoder.Matches(phcPassword, []byte(phc1))).To(BeTrue())
 
 		// Valid pbkdf2 (bare, inherits encoder's algorithm)
-		phcBare := fmt.Sprintf("$pbkdf2$i=1000$%s$%s", b64Salt, b64Hash256)
-		Expect(encoder.Matches(password, []byte(phcBare))).To(BeTrue())
+		phcBare := fmt.Sprintf("$pbkdf2$i=1000$%s$%s", b64PHCSalt, b64PHCHash256)
+		Expect(encoder.Matches(phcPassword, []byte(phcBare))).To(BeTrue())
 
 		// Valid PHC with secret
-		encWithSecret := Pbkdf2PasswordEncoder{}.New("app-secret", 16, 1000, 32, "PBKDF2WithHmacSHA256")
-		saltAndSecret := append([]byte(nil), salt...)
-		saltAndSecret = append(saltAndSecret, []byte("app-secret")...)
-		derivedSecret := pbkdf2.Key(password, saltAndSecret, 1000, 32, sha256.New)
-		phcSecret := fmt.Sprintf("$pbkdf2-sha256$i=1000$%s$%s", b64Salt, base64.StdEncoding.EncodeToString(derivedSecret))
-		Expect(encWithSecret.Matches(password, []byte(phcSecret))).To(BeTrue())
+		phcEncWithSecret := Pbkdf2PasswordEncoder{}.New("app-secret", 16, 1000, 32, "PBKDF2WithHmacSHA256")
+		phcSaltAndSecret := append([]byte(nil), phcSalt...)
+		phcSaltAndSecret = append(phcSaltAndSecret, []byte("app-secret")...)
+		phcDerivedSecret := pbkdf2.Key(phcPassword, phcSaltAndSecret, 1000, 32, sha256.New)
+		phcSecret := fmt.Sprintf("$pbkdf2-sha256$i=1000$%s$%s", b64PHCSalt, base64.StdEncoding.EncodeToString(phcDerivedSecret))
+		Expect(phcEncWithSecret.Matches(phcPassword, []byte(phcSecret))).To(BeTrue())
 
 		// Unsupported PHC algorithm
-		Expect(encoder.Matches(password, []byte(fmt.Sprintf("$pbkdf2-unknown$i=1000$%s$%s", b64Salt, b64Hash256)))).To(BeFalse())
+		Expect(encoder.Matches(phcPassword, []byte(fmt.Sprintf("$pbkdf2-unknown$i=1000$%s$%s", b64PHCSalt, b64PHCHash256)))).To(BeFalse())
 
 		// Invalid i= non-integer
 		Expect(encoder.Matches(password, []byte("$pbkdf2-sha256$i=invalid$c2FsdDEyMzQ$YWJjZGVmZ2hpamtsbW5vcHFyc3R1dnd4eXoxMjM0NTY="))).To(BeFalse())

@@ -2,6 +2,7 @@ package password
 
 import (
 	"bytes"
+	"fmt"
 
 	. "github.com/BeamFoundry/rays-web-security/pkg/core"
 	. "github.com/BeamFoundry/rays/pkg/lang"
@@ -34,11 +35,15 @@ func (this DelegatingPasswordEncoder) NewDefault() *DelegatingPasswordEncoder {
 
 // Encode implements [core.PasswordEncoder].
 func (this *DelegatingPasswordEncoder) Encode(password []byte) ([]byte, error) {
+	encoder, ok := this.idToPasswordEncoder[this.idForEncode]
+	if !ok || encoder == nil {
+		return []byte(""), fmt.Errorf("no password encoder registered for id: %s", this.idForEncode)
+	}
 	var buf bytes.Buffer
 	buf.WriteRune('{')
 	buf.WriteString(this.idForEncode)
 	buf.WriteRune('}')
-	encoded, err := this.idToPasswordEncoder[this.idForEncode].Encode(password)
+	encoded, err := encoder.Encode(password)
 	if err != nil {
 		return []byte(""), err
 	}
