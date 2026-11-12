@@ -209,7 +209,7 @@ func (this *Pbkdf2PasswordEncoder) Matches(password, encoded []byte) bool {
 		if len(parts) >= 5 && strings.HasPrefix(parts[1], "pbkdf2") {
 			var iter int
 			var hasIter bool
-			for _, p := range strings.Split(parts[2], ",") {
+			for p := range strings.SplitSeq(parts[2], ",") {
 				kv := strings.SplitN(p, "=", 2)
 				if len(kv) == 2 && kv[0] == "i" {
 					var parseErr error

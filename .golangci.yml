@@ -90,7 +90,6 @@ linters:
       forbid:
         - pattern: ^print(ln)?$
         - pattern: ^fmt\.Print(f|ln)?$
-        - pattern: ^http\.Default(Client|ServeMux|Transport)$
       analyze-types: true
     goconst:
       numbers: true
@@ -291,8 +290,10 @@ formatters:
         - dot
       custom-order: true
     gofumpt:
-      module-path: github.com/gofiber/fiber
-      extra-rules: true
+      module-path: github.com/BeamFoundry/rays-web-security
+      extra:
+        group-params: true
+        clothe-returns: false
   exclusions:
     generated: lax
     paths:
