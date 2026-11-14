@@ -66,8 +66,10 @@ func (this *DefaultSecurityFilterChain) Initialize(serverName string, app Securi
 
 	// Authentication
 	app.Use(func(handler SecurityHandler) error {
+		httpSecurity := this.findHttpSecurity(serverName, handler.Path())
+		isStateless := httpSecurity.SessionCreationPolicy() == SessionCreationPolicy{}.New().STATELESS
 		// Session
-		if app.HasSession(handler) {
+		if !isStateless && app.HasSession(handler) {
 			if authentication, ok := handler.SessionValue("authentication").(Authentication); ok {
 				this.logger.Debug("Got Authentication from session")
 				this.securityContextHolder.GetContext().SetAuthentication(authentication)
@@ -75,7 +77,6 @@ func (this *DefaultSecurityFilterChain) Initialize(serverName string, app Securi
 			}
 		}
 		// RememberMe
-		httpSecurity := this.findHttpSecurity(serverName, handler.Path())
 		if rememberMe, ok := httpSecurity.RememberMeService().Get(); ok {
 			this.logger.Trace("Found RememberMe Service")
 			var authentication Authentication
@@ -89,7 +90,9 @@ func (this *DefaultSecurityFilterChain) Initialize(serverName string, app Securi
 			)
 			if authentication != nil {
 				this.logger.Debug("RememberMe Service return an authentication")
-				handler.SetSessionValue("authentication", authentication)
+				if !isStateless {
+					handler.SetSessionValue("authentication", authentication)
+				}
 				this.securityContextHolder.GetContext().SetAuthentication(authentication)
 				return DefaultSecurityFilterChainException{}.Next().Handle(handler)
 			}
