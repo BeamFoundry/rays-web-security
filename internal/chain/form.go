@@ -129,7 +129,11 @@ func (this *FormLoginFilter) Authenticate(_ SecurityHandler) SecurityFilterChain
 // AuthenticationRequired implements [SecurityFilter].
 func (this *FormLoginFilter) AuthenticationRequired(handler SecurityHandler) SecurityFilterChainException {
 	url := handler.Path()
-	if handler.Method() != "GET" {
+	if handler.Method() == "GET" {
+		if u := handler.URL(); u != nil && u.RawQuery != "" {
+			url = url + "?" + u.RawQuery
+		}
+	} else {
 		url = "/"
 		if this.httpSecurity.FormLogin().DefaultSuccessURL() != "" {
 			url = this.httpSecurity.FormLogin().DefaultSuccessURL()
@@ -146,8 +150,9 @@ func (this *FormLoginFilter) processLogin(handler SecurityHandler, username, pas
 		return ex
 	}
 	url := this.httpSecurity.FormLogin().DefaultSuccessURL()
-	if redirect, ok := handler.SessionValue("redirect").(string); ok {
+	if redirect, ok := handler.SessionValue("redirect").(string); ok && redirect != "" {
 		url = redirect
+		handler.SetSessionValue("redirect", "")
 	}
 	enc := gob.NewEncoder(io.Discard)
 

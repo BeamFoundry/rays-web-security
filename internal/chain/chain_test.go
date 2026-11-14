@@ -2,6 +2,7 @@ package chain_test
 
 import (
 	"encoding/base64"
+	"net/http"
 	"net/url"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -17,11 +18,50 @@ import (
 	_ "github.com/BeamFoundry/rays-web-security/internal/autoconfig"
 	. "github.com/BeamFoundry/rays-web-security/internal/chain"
 
+	. "github.com/BeamFoundry/rays-web-security/pkg/auth"
 	. "github.com/BeamFoundry/rays-web-security/pkg/config"
 	. "github.com/BeamFoundry/rays-web-security/pkg/core"
 	. "github.com/BeamFoundry/rays-web-security/pkg/rememberme"
 	. "github.com/BeamFoundry/rays-web-security/pkg/testing"
 )
+
+type nilSessionPanicHandler struct {
+	*MockSecurityHandler
+	sessionValueCalls    int
+	setSessionValueCalls int
+}
+
+func (h *nilSessionPanicHandler) SessionValue(key string) any {
+	h.sessionValueCalls++
+	panic("nil session: SessionValue should not be called on STATELESS chain (key=" + key + ")")
+}
+
+func (h *nilSessionPanicHandler) SetSessionValue(key string, _ any) {
+	h.setSessionValueCalls++
+	panic("nil session: SetSessionValue should not be called on STATELESS chain (key=" + key + ")")
+}
+
+type sessionPreservingHandler struct {
+	*MockSecurityHandler
+}
+
+func (h *sessionPreservingHandler) SessionRefresh() {
+	// Real session implementations regenerate the session ID while preserving session data.
+}
+
+func executeWithHandler(app *MockSecurityAppHandler, handler SecurityHandler) error {
+	for _, mw := range *app.Middlewares {
+		if err := mw(handler); err != nil {
+			return err
+		}
+	}
+	for _, route := range *app.Routes {
+		if route.Method == handler.Method() && route.Path == handler.Path() {
+			return route.Handler(handler)
+		}
+	}
+	return nil
+}
 
 type UserDetailsServiceConfiguration struct {
 	Configuration
@@ -299,6 +339,72 @@ var _ = Describe("SecurityFilterChain", func() {
 			)
 			Expect(ex).To(HaveOccurred())
 		})
+
+		It("preserves query string on GET redirect in AuthenticationRequired", func() {
+			chain := GetBeamDefaultInstance[*DefaultSecurityFilterChain]()
+			Expect(chain).NotTo(BeNil())
+			app := NewMockSecurityAppHandler()
+			chain.Initialize("primary", app)
+
+			handler := NewMockSecurityHandler(HttpMethods.GET, ValErr(url.Parse("http://www.example.com/admin?tab=users&page=2")))
+			ex := Try(
+				func() {
+					RaiseErr(app.Execute(handler))
+				},
+				Catch(func(e SecurityFilterChainException) Error {
+					ex, ok := e.(*DefaultSecurityFilterChainException)
+					Expect(ok).To(BeTrue())
+					Expect(ex.Action()).To(Equal(DefaultSecurityFilterAction{}.New().REDIRECT.Name()))
+					Expect(ex.To()).To(Equal("/login"))
+					return e
+				}),
+			)
+			Expect(ex).To(HaveOccurred())
+			Expect(handler.SessionValue("redirect")).To(Equal("/admin?tab=users&page=2"))
+		})
+
+		It("redirects to saved redirect URL and clears redirect after processLogin", func() {
+			chain := GetBeamDefaultInstance[*DefaultSecurityFilterChain]()
+			Expect(chain).NotTo(BeNil())
+			app := NewMockSecurityAppHandler()
+			chain.Initialize("primary", app)
+
+			mockHandler := NewMockSecurityHandler(HttpMethods.POST, ValErr(url.Parse("http://www.example.com/login")))
+			mockHandler.SetFormValue("username", "admin")
+			mockHandler.SetFormValue("password", "admin")
+			mockHandler.SetSessionValue("redirect", "/admin?tab=users&page=2")
+			handler := &sessionPreservingHandler{MockSecurityHandler: mockHandler}
+
+			ex := Try(
+				func() {
+					RaiseErr(executeWithHandler(app, handler))
+				},
+				Catch(func(e SecurityFilterChainException) Error {
+					ex, ok := e.(*DefaultSecurityFilterChainException)
+					Expect(ok).To(BeTrue())
+					Expect(ex.Action()).To(Equal(DefaultSecurityFilterAction{}.New().REDIRECT.Name()))
+					Expect(ex.To()).To(Equal("/admin?tab=users&page=2"))
+					return e
+				}),
+			)
+			Expect(ex).To(HaveOccurred())
+			Expect(handler.SessionValue("redirect")).To(Equal(""))
+
+			// A subsequent manual login on the same session should redirect to DefaultSuccessURL ("/") instead of "" or the stale URL.
+			ex = Try(
+				func() {
+					RaiseErr(executeWithHandler(app, handler))
+				},
+				Catch(func(e SecurityFilterChainException) Error {
+					ex, ok := e.(*DefaultSecurityFilterChainException)
+					Expect(ok).To(BeTrue())
+					Expect(ex.Action()).To(Equal(DefaultSecurityFilterAction{}.New().REDIRECT.Name()))
+					Expect(ex.To()).To(Equal("/"))
+					return e
+				}),
+			)
+			Expect(ex).To(HaveOccurred())
+		})
 	})
 
 	Context("with BasicLogin", func() {
@@ -431,6 +537,74 @@ var _ = Describe("SecurityFilterChain", func() {
 				},
 			)
 			Expect(ex).NotTo(HaveOccurred())
+		})
+
+		It("does not call SessionValue or SetSessionValue and does not panic when HasSession returns true", func() {
+			chain := GetBeamDefaultInstance[*DefaultSecurityFilterChain]()
+			Expect(chain).NotTo(BeNil())
+			app := NewMockSecurityAppHandler()
+			chain.Initialize("primary", app)
+
+			base64encode := func(src string) string {
+				return base64.StdEncoding.EncodeToString([]byte(src))
+			}
+
+			mockHandler := NewMockSecurityHandler(HttpMethods.GET, ValErr(url.Parse("http://www.example.com/admin")))
+			mockHandler.SetCookie(&http.Cookie{Name: "session_id", Value: "from-other-endpoint"})
+			mockHandler.SetHeader("Authorization", "Basic "+base64encode("admin:admin"))
+			handler := &nilSessionPanicHandler{MockSecurityHandler: mockHandler}
+
+			Expect(app.HasSession(handler)).To(BeTrue())
+			Expect(func() {
+				Expect(executeWithHandler(app, handler)).NotTo(HaveOccurred())
+			}).NotTo(Panic())
+			Expect(handler.sessionValueCalls).To(Equal(0))
+			Expect(handler.setSessionValueCalls).To(Equal(0))
+		})
+	})
+	Context("with Stateless and RememberMe", func() {
+		BeforeEach(func() {
+			httpSecurity := (&HttpSecurityBuilder{}).
+				Match("/api/**", "/admin", "/admin/**").
+				AuthorizedHTTPRequests().
+				Paths("/admin", "/admin/**").HasRole("ADMIN").
+				And().
+				AnyRequest().HasRole("ADMIN").
+				Basic().SessionCreationPolicy().Stateless()
+			AddBeamFor(httpSecurity)
+			AddBeamFor(&HttpSecurityConfiguration{})
+			Expect(GetContainer().Initialize()).NotTo(HaveOccurred())
+		})
+
+		It("does not call SessionValue or SetSessionValue when HasSession returns true and RememberMe succeeds", func() {
+			chain := GetBeamDefaultInstance[*DefaultSecurityFilterChain]()
+			Expect(chain).NotTo(BeNil())
+			app := NewMockSecurityAppHandler()
+			chain.Initialize("primary", app)
+
+			rememberMe := GetBeamDefaultInstance[RememberMeService]()
+			userDetailsService := GetBeamDefaultInstance[UserDetailsService]()
+			admin := userDetailsService.LoadUserByUsername("admin")
+			auth := UsernamePasswordAuthenticationToken{}.NewAuthenticated(admin, admin.GetPassword(), admin.GetAuthorities())
+
+			cookieSetupHandler := NewMockSecurityHandler(HttpMethods.POST, ValErr(url.Parse("http://www.example.com/login")))
+			cookieSetupHandler.SetFormValue("remember-me", "true")
+			rememberMe.LoginSuccess(cookieSetupHandler, auth)
+			rmCookie, err := cookieSetupHandler.Cookie("remember-me")
+			Expect(err).NotTo(HaveOccurred())
+
+			mockHandler := NewMockSecurityHandler(HttpMethods.GET, ValErr(url.Parse("http://www.example.com/admin")))
+			mockHandler.SetCookie(&http.Cookie{Name: "session_id", Value: "from-other-endpoint"})
+			mockHandler.SetCookie(rmCookie)
+			handler := &nilSessionPanicHandler{MockSecurityHandler: mockHandler}
+
+			Expect(app.HasSession(handler)).To(BeTrue())
+			Expect(func() {
+				Expect(executeWithHandler(app, handler)).NotTo(HaveOccurred())
+			}).NotTo(Panic())
+			Expect(handler.sessionValueCalls).To(Equal(0))
+			Expect(handler.setSessionValueCalls).To(Equal(0))
+			Expect(GetBeamDefaultInstance[SecurityContextHolder]().GetContext().GetAuthentication().IsAuthenticated()).To(BeTrue())
 		})
 	})
 	Context("With a MessageSourceValidator", func() {
